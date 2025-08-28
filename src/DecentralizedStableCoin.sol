@@ -14,17 +14,17 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
  * This contract is just the ERC20 implementation of our stablecoin system.
  */
 contract DecentralizedStableCoin is ERC20Burnable, Ownable {
-    error DecentralizedStableCoin__MustBeMoreThanZero();
+    error DecentralizedStableCoin__ZeroAmount();
     error DecentralizedStableCoin__BurnAmountExceedsBalance();
     error DecentralizedStableCoin__NotZeroAddress();
     address public i_owner;
     //Because we're inheriting ERC20Burnable, and it inherits ERC20, we need to satisfy the standard ERC20 constructor
-    constructor(address) ERC20("LetiCarolinaDollar", "LCD") Ownable(i_owner) {}
+    constructor(address) ERC20("LetiCarolDollar", "LCD") Ownable(i_owner) {}
 
     function burn(uint256 _amount) public override onlyOwner {
         uint256 balance = balanceOf(msg.sender);
         if (_amount <= 0) {
-            revert DecentralizedStableCoin__MustBeMoreThanZero();
+            revert DecentralizedStableCoin__ZeroAmount();
         }
         if (balance < _amount) {
             revert DecentralizedStableCoin__BurnAmountExceedsBalance();
@@ -40,7 +40,7 @@ contract DecentralizedStableCoin is ERC20Burnable, Ownable {
             revert DecentralizedStableCoin__NotZeroAddress();
         }
         if (_amount <= 0) {
-            revert DecentralizedStableCoin__MustBeMoreThanZero();
+            revert DecentralizedStableCoin__ZeroAmount();
         }
         _mint(_to, _amount);
         return true;
