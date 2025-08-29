@@ -18,6 +18,7 @@ contract DecentralizedStableCoin is ERC20Burnable, Ownable {
     error DecentralizedStableCoin__BurnAmountExceedsBalance();
     error DecentralizedStableCoin__NotZeroAddress();
     address public i_owner;
+
     //Because we're inheriting ERC20Burnable, and it inherits ERC20, we need to satisfy the standard ERC20 constructor
     constructor(address) ERC20("LetiCarolDollar", "LCD") Ownable(i_owner) {}
 
@@ -29,6 +30,8 @@ contract DecentralizedStableCoin is ERC20Burnable, Ownable {
         if (balance < _amount) {
             revert DecentralizedStableCoin__BurnAmountExceedsBalance();
         }
+        //super to override the parent’s burn and add my own checks (onlyOwner, zero-amount check, etc.)
+        //“run my extra guards, then do the standard burn logic from ERC20Burnable.”
         super.burn(_amount);
     }
 
