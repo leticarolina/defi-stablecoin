@@ -1,9 +1,22 @@
-## Stable coin
+# DeFi Stablecoin
 
-1. Relative Stability - anchored/pegged to the US Dollar $1.00
-using Chainlink Price Feed, set a function to exchange ETH&BTC > $
-2. Stability Mechanism (Minting) - Algorithmic (Decentralized)
-People can only mint the stable coin with enough collateral (coded)
-3. Collateral type - exogenous (crypto collateral)
-WETH
-WBTC
+## 1. Relative Stability: Anchored or Pegged -> $1.00
+- Chainlink Price feed.
+- Set a function to exchange ETH & BTC -> $$$
+
+## 2. Stability Mechanism (Minting): Algorithmic (Decentralized)
+- People can only mint the stablecoin with enough collateral (coded)
+
+## 3. Collateral: Exogenous (Crypto)
+- wETH
+- wBTC
+
+## Tools
+
+- Solidity
+- Foundry for testing
+- Chainlink for Collateral Price Feed Address
+
+
+### Project Status
+Currently under development
