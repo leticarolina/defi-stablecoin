@@ -4,4 +4,14 @@ out = "out"
 libs = ["lib"]
 remappings = ["@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts","@chainlink/contracts/=lib/chainlink-evm/contracts/" ] 
 
+
+# //control how Forge runs your invariant tests
+[invariant]
+# Forge will restart state 200 times and try to break your invariants. More runs = more coverage, but slower.
+runs = 200
+# max number of calls per run. Think of it as “how many random txs Forge chains together before checking the invariant again.” Higher depth = more complex scenarios tested.
+# defines the maximum number of function calls within a single invariant test sequence
+depth = 200
+# tells Forge not to treat a revert as a test failure. Useful because many of your functions are supposed to revert (e.g. if health factor < 1). If true, every revert would look like a broken invariant.
+fail_on_revert = false
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

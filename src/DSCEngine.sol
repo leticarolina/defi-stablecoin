@@ -205,7 +205,7 @@ contract DSCEngine is ReentrancyGuard {
             msg.sender,
             msg.sender
         );
-        _revertIfHealthFactorIsBroken(msg.sender);
+        // _revertIfHealthFactorIsBroken(msg.sender);
         //1. get health factor
         //2. get collateral value in USD
         //3. get DSC Value
@@ -316,7 +316,7 @@ contract DSCEngine is ReentrancyGuard {
         if (!success) {
             revert DSCEngine__TransferFailed();
         }
-        _revertIfHealthFactorIsBroken(msg.sender);
+        _revertIfHealthFactorIsBroken(from);
     }
 
     //low level internal func, not to call unless the function calling it is checking heath factor
