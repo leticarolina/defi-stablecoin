@@ -10,18 +10,10 @@ contract DeployDSC is Script {
     address[] public tokenAddresses;
     address[] public priceFeedAdresses;
 
-    function run()
-        external
-        returns (DecentralizedStableCoin, DSCEngine, HelperConfig)
-    {
+    function run() external returns (DecentralizedStableCoin, DSCEngine, HelperConfig) {
         HelperConfig helperConfig = new HelperConfig();
-        (
-            address wETHPriceFeedAddress,
-            address wBTCPriceFeedAddress,
-            address wETH,
-            address wBTC,
-            uint256 deployerKey
-        ) = helperConfig.activeNetworkConfig();
+        (address wETHPriceFeedAddress, address wBTCPriceFeedAddress, address wETH, address wBTC, uint256 deployerKey) =
+            helperConfig.activeNetworkConfig();
         priceFeedAdresses = [wETHPriceFeedAddress, wBTCPriceFeedAddress];
         tokenAddresses = [wETH, wBTC];
 
@@ -29,11 +21,7 @@ contract DeployDSC is Script {
 
         vm.startBroadcast(deployerKey);
         DecentralizedStableCoin lcd = new DecentralizedStableCoin(deployer);
-        DSCEngine dscEngine = new DSCEngine(
-            tokenAddresses,
-            priceFeedAdresses,
-            address(lcd)
-        );
+        DSCEngine dscEngine = new DSCEngine(tokenAddresses, priceFeedAdresses, address(lcd));
         lcd.transferOwnership(address(dscEngine));
         vm.stopBroadcast();
 
