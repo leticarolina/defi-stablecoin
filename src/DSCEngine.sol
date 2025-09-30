@@ -30,6 +30,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__HealthFactorIsGood(uint256 healthfactor);
     error DSCEngine__HealthFactorNotImproved();
     error DSCEngine__RedeemExceedsBalance();
+    error DSCEngine__NotEnoughDSC();
 
     ////////////////////////////////////////////////
     ///////////////---STATE VARIABLES------/////////
@@ -238,6 +239,9 @@ contract DSCEngine is ReentrancyGuard {
         if (startingUserHealthFactor >= MINIMUM_HEALTH_FACTOR) {
             revert DSCEngine__HealthFactorIsGood(startingUserHealthFactor);
         }
+        if (i_lcdAddress.balanceOf(msg.sender) < debtToCover) {
+            revert DSCEngine__NotEnoughDSC();
+        }
 
         //eg 100dsc debtToCover, 100dsc == HOW MUCH ETH?
         // Given a DSC amount (debtToCover), how much of this collateral token should I take (ETH, BTC, etc.) in return?
@@ -252,15 +256,18 @@ contract DSCEngine is ReentrancyGuard {
 
         uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered +
             bonusCollateral;
-        //Take totalCollateralToRedeem worth of their ETH/BTC out of the protocol and send it to msg.sender (the liquidator)
+
+        //The liquidator burns debtToCover DSC on behalf of the insolvent user to reduce their debt and improve HF
+        _burnDSC(debtToCover, user, msg.sender);
+        //Take totalCollateralToRedeem worth of their ETH/BTC out of the protocol and send it to the liquidator
+        //this makes user HF even worse temporarily
         _redeemCollateral(
             collateral,
             totalCollateralToRedeem,
             user,
             msg.sender
         );
-        //The liquidator burns debtToCover DSC on behalf of the insolvent user to reduce their debt and raise HF
-        _burnDSC(debtToCover, user, msg.sender);
+
         //make sure that the liquidation actually helped, if their HF didn’t improve → revert
         uint256 endingUserHealthFactor = _healthFactor(user);
         if (endingUserHealthFactor <= startingUserHealthFactor) {
@@ -502,7 +509,7 @@ contract DSCEngine is ReentrancyGuard {
         return s_collateralDeposited[user][token];
     }
 
-    function getMinted(address user) external view returns (uint256) {
+    function getDSCMinted(address user) external view returns (uint256) {
         return s_DSCMinted[user];
     }
 
