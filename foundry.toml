@@ -14,5 +14,5 @@ runs = 200
 depth = 200
 # tells Forge not to treat a revert as a test failure. Useful because many of your functions are supposed to revert (e.g. if health factor < 1). If true, every revert would look like a broken invariant.
 # `fail_on_revert` configuration option to `false`, allow tests to continue even if some function calls revert, which might be expected behavior under certain conditions
-fail_on_revert = false
+fail_on_revert = true
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

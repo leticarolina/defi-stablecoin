@@ -24,50 +24,56 @@ contract InvariantsTest is StdInvariant, Test {
     function setUp() external {
         deployer = new DeployDSC();
         (dsc, dsce, config) = deployer.run();
-        (,, weth, wbtc,) = config.activeNetworkConfig();
+        (, , weth, wbtc, ) = config.activeNetworkConfig();
         handler = new Handler(dsce, dsc);
         targetContract(address(handler)); // fuzz will call handler's public funcs
     }
 
-    // function invariant_protocolMustHaveMoreValueThanTotalSupply() public view {
-    //     uint256 totalSupply = dsc.totalSupply();
-    //     uint256 totalWethDeposited = IERC20(weth).balanceOf(address(dsce));
-    //     uint256 totalWbtcDeposited = IERC20(wbtc).balanceOf(address(dsce));
+    function invariant_protocolMustHaveMoreValueThanTotalSupply() public view {
+        uint256 totalSupply = dsc.totalSupply();
+        uint256 totalWethDeposited = IERC20(weth).balanceOf(address(dsce));
+        uint256 totalWbtcDeposited = IERC20(wbtc).balanceOf(address(dsce));
 
-    //     uint256 wethValue = dsce.getUSDValue(weth, totalWethDeposited);
-    //     uint256 wbtcValue = dsce.getUSDValue(wbtc, totalWbtcDeposited);
-    //     console.log("weth value:", wethValue);
-    //     console.log("wbtc value:", wbtcValue);
-    //     console.log("total supply:", totalSupply);
-    //     console.log("times mint is called:", handler.timesMintIsCalled());
+        uint256 wethValue = dsce.getUSDValue(weth, totalWethDeposited);
+        uint256 wbtcValue = dsce.getUSDValue(wbtc, totalWbtcDeposited);
+        console.log("weth value:", wethValue);
+        console.log("wbtc value:", wbtcValue);
+        console.log("total supply:", totalSupply);
+        console.log("times mint is called:", handler.timesMintIsCalled());
 
-    //     assert(wethValue + wbtcValue >= totalSupply);
-    // }
+        assert(wethValue + wbtcValue >= totalSupply);
+    }
 
+    //layup invariant
     //What is the primary benefit of including invariant tests that specifically check if 'getter' functions consistently execute without failure during fuzzing?
     //A failure in a basic getter function often signals an underlying invalid or unexpected system state reached during the fuzzing process.
-    // function invariant_gettersShouldNotRevert() public view {
-    //     // token to use for token-based getters (if any tokens configured)
-    //     address[] memory cols = dsce.getCollateralTokens();
-    //     address token = cols.length > 0 ? cols[0] : address(0);
+    function invariant_gettersShouldNotRevert() public view {
+        // token to use for token-based getters (if any tokens configured)
+        address[] memory cols = dsce.getCollateralTokens();
+        address token = cols.length > 0 ? cols[0] : address(0); //does cols.length has any address? if yes use the first one, else use address(0) which is an invalid address
 
-    //     // User-based getters
-    //     dsce.getHealthFactor(USER);
-    //     dsce.getAccountCollateralValue(USER);
-    //     dsce.getAccountInformation(USER);
-    //     dsce.getMinted(USER);
-    //     // Token list getter
-    //     dsce.getCollateralTokens();
+        //no param getters
+        dsce.getLiquidationThreshold();
+        dsce.getPrecision();
+        dsce.getMinHealthFactor();
 
-    //     // Only call token-based getters if actually have a token configured
-    //     if (token != address(0)) {
-    //         dsce.getUSDValue(token, 1e18);
-    //         dsce.getTokenAmountFromDSC(token, 1e18);
-    //     }
+        // User-based getters
+        dsce.getHealthFactor(USER);
+        dsce.getAccountCollateralValue(USER);
+        dsce.getAccountInformation(USER);
+        dsce.getDSCMinted(USER);
 
-    //     // dsce.getCollateralDeposited(USER, token);
-    //     // dsce.getPriceFeed(token);
-    // }
+        // Token list getter
+        dsce.getCollateralTokens();
+
+        // Only call token-based getters if actually have a token configured
+        if (token != address(0)) {
+            dsce.getUSDValue(token, 1e18);
+            dsce.getTokenAmountFromDSC(token, 1e18);
+            dsce.getPriceFeed(token);
+            dsce.getCollateralDeposited(USER, token);
+        }
+    }
 }
 
 //what are the invariants? properties of the system that should always hold true?

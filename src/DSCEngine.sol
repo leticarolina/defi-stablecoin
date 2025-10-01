@@ -517,11 +517,15 @@ contract DSCEngine is ReentrancyGuard {
         return s_ArrayCollateralTokens;
     }
 
-    function liquidationThreshold() external pure returns (uint256) {
+    function getLiquidationThreshold() external pure returns (uint256) {
         return LIQUIDATION_THRESHOLD;
     }
 
-    function minHealthFactor() external pure returns (uint256) {
+    function getPrecision() external pure returns (uint256) {
+        return PRECISION;
+    }
+
+    function getMinHealthFactor() external pure returns (uint256) {
         return MINIMUM_HEALTH_FACTOR;
     }
 

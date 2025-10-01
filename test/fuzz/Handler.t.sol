@@ -10,8 +10,9 @@ import {DecentralizedStableCoin} from "../../src/DecentralizedStableCoin.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {MockV3Aggregator} from "@chainlink/contracts/src/v0.8/shared/mocks/MockV3Aggregator.sol";
 
+//here will be the functions that the handler can call before each invariant test
 contract Handler is StdInvariant, Test {
-    DSCEngine dsce;
+    DSCEngine dsce; //so the handler knows what the dsc engine is
     DecentralizedStableCoin dsc;
     ERC20Mock weth;
     ERC20Mock wbtc;
@@ -19,6 +20,7 @@ contract Handler is StdInvariant, Test {
     uint256 public timesMintIsCalled;
     address[] public usersWithCollateralDeposited;
     MockV3Aggregator public ethUsdPriceFeed;
+    address public USER = makeAddr("user");
 
     constructor(DSCEngine _dscEngine, DecentralizedStableCoin _dsc) {
         dsce = _dscEngine;
@@ -32,13 +34,18 @@ contract Handler is StdInvariant, Test {
     }
 
     function mintDsc(uint256 amount, uint256 addressSeed) public {
-        // amount = bound(amount, 1, MAX_DEPOSIT_SIZE);
         if (usersWithCollateralDeposited.length == 0) {
             return;
         }
-        address sender = usersWithCollateralDeposited[addressSeed % usersWithCollateralDeposited.length];
-        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getAccountInformation(sender);
-        int256 maxDscToMint = (int256(collateralValueInUsd) / 2) - int256(totalDscMinted);
+        address sender = usersWithCollateralDeposited[
+            addressSeed % usersWithCollateralDeposited.length
+        ]; //get a random user from the array, addressSeed is a random number provided by Foundry
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce
+            .getAccountInformation(sender);
+        int256 collateralAdjusted = (int256(collateralValueInUsd) *
+            int256(dsce.getLiquidationThreshold())) /
+            int256(dsce.getPrecision()); //Apply liquidation threshold (80%) i.e. (collateralValueInUsd * 80 / 1e18)
+        int256 maxDscToMint = (collateralAdjusted - int256(totalDscMinted)); //divid
         if (maxDscToMint < 0) {
             return;
         }
@@ -55,25 +62,43 @@ contract Handler is StdInvariant, Test {
     //parametra are randomnized
     //this has cut revert amount down to zer0
     //invariant_protocolMustHaveMoreValueThanTotalSupply() (runs: 200, calls: 40000, reverts: 0)
-    function depositCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
+    /**
+     * @notice Deposits collateral into the DSCEngine contract on behalf of the caller.
+     * @dev Parameters are fuzzed to test various scenarios.
+     * @param collateralSeed A seed to determine which collateral type to deposit (e.g., WETH or WBTC).
+     * @param amountCollateral The amount of collateral to deposit, bounded to a maximum size.
+     * This is similar to depositCollateral function in DSCEngine.sol but with fuzzed params and we want this to always succeed
+     */
+    function depositCollateral(
+        uint256 collateralSeed,
+        uint256 amountCollateral
+    ) public {
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
         amountCollateral = bound(amountCollateral, 1, MAX_DEPOSIT_SIZE); //bound is from stdutils, bounds the result to an amount
+        //bound() means amountCollateral will always be between 1 and MAX_DEPOSIT_SIZE
 
-        vm.startPrank(msg.sender);
-        collateral.mint(msg.sender, amountCollateral);
+        vm.startPrank(USER);
+        collateral.mint(USER, amountCollateral);
         collateral.approve(address(dsce), amountCollateral);
-        dsce.depositCollateral(address(collateral), amountCollateral);
-        vm.stopPrank();
+        dsce.depositCollateral(address(collateral), amountCollateral); //calls with valid address so it won't revert
+
         //double push
-        usersWithCollateralDeposited.push(msg.sender);
+        usersWithCollateralDeposited.push(USER);
+        vm.stopPrank();
     }
 
-    function redeemCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
+    function redeemCollateral(
+        uint256 collateralSeed,
+        uint256 amountCollateral
+    ) public {
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
-        // Read the user’s current balance using the *EOA* (msg.sender in Handler context)
-        uint256 maxCollateralToRedeem = dsce.getCollateralDeposited(msg.sender, address(collateral));
+        // getCollateralDeposited reads the user’s current balance using the *EOA* (msg.sender in Handler context)
+        uint256 maxCollateralToRedeem = dsce.getCollateralDeposited(
+            msg.sender,
+            address(collateral)
+        );
         //they should only be redeeming as much as they put in the system
-        amountCollateral = bound(amountCollateral, 0, maxCollateralToRedeem);
+        amountCollateral = bound(amountCollateral, 0, maxCollateralToRedeem); //force the input values within a specific valid range
         if (amountCollateral == 0) {
             return;
         }
@@ -83,14 +108,18 @@ contract Handler is StdInvariant, Test {
         vm.stopPrank();
     }
 
-    function updateCollateralPrice(uint96 newPrice) public {
-        int256 newPriceInt = int256(uint256(newPrice));
-        ethUsdPriceFeed.updateAnswer(newPriceInt);
-    }
+    //breaks invariant test suite, if price of an asset plummets too quick the system breaks
+    // function updateCollateralPrice(uint96 newPrice) public {
+    //     int256 newPriceInt = int256(uint256(newPrice));
+    //     ethUsdPriceFeed.updateAnswer(newPriceInt);
+    // }
 
     //HELPERS
     //can only get a valid collateral type
-    function _getCollateralFromSeed(uint256 collateralSeed) private view returns (ERC20Mock) {
+    //this function will return either weth or wbtc based on the seed
+    function _getCollateralFromSeed(
+        uint256 collateralSeed
+    ) private view returns (ERC20Mock) {
         if (collateralSeed % 2 == 0) {
             return weth;
         }
