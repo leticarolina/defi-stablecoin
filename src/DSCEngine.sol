@@ -62,6 +62,12 @@ contract DSCEngine is ReentrancyGuard {
         address indexed token,
         uint256 amount
     );
+    event DSCMinted(address indexed user, uint256 indexed amountDSCMinted);
+    event DSCBurned(
+        uint256 indexed amountDSCToBurn,
+        address indexed dscFrom,
+        address indexed onBehalfOf
+    );
 
     ////////////////////////////////////////////////
     ///////////////----MODIFIERS------//////////////
@@ -177,6 +183,7 @@ contract DSCEngine is ReentrancyGuard {
     ) public moreThanZero(amountDSCToMint) nonReentrant {
         s_DSCMinted[msg.sender] += amountDSCToMint; //s_DSCMinted[user]: the user’s 'debt'
         _revertIfHealthFactorIsBroken(msg.sender); //if they try mint too much eg. 100$ETH > 150$LCD revert, ensure their collateral is healthy after minting.
+        emit DSCMinted(msg.sender, amountDSCToMint);
         bool minted = i_lcdAddress.mint(msg.sender, amountDSCToMint);
         if (!minted) {
             revert DSCEngine__MintFailed();
@@ -217,7 +224,7 @@ contract DSCEngine is ReentrancyGuard {
      */
     function burnDsc(uint256 amount) public moreThanZero(amount) nonReentrant {
         _burnDSC(amount, msg.sender, msg.sender);
-        _revertIfHealthFactorIsBroken(msg.sender); //backup bcs burning won't really drop health factor
+        // _revertIfHealthFactorIsBroken(msg.sender); //backup bcs burning won't really drop health factor
     }
 
     /**
@@ -258,7 +265,7 @@ contract DSCEngine is ReentrancyGuard {
             bonusCollateral;
 
         //The liquidator burns debtToCover DSC on behalf of the insolvent user to reduce their debt and improve HF
-        _burnDSC(debtToCover, user, msg.sender);
+        _burnDSC(debtToCover, msg.sender, user);
         //Take totalCollateralToRedeem worth of their ETH/BTC out of the protocol and send it to the liquidator
         //this makes user HF even worse temporarily
         _redeemCollateral(
@@ -321,7 +328,7 @@ contract DSCEngine is ReentrancyGuard {
             amountCollateral
         );
         if (!success) {
-            revert DSCEngine__TransferFailed();
+            revert DSCEngine__TransferFailed(); //unreachable bcs engine validates collateral tokens up front
         }
         _revertIfHealthFactorIsBroken(from);
     }
@@ -335,8 +342,8 @@ contract DSCEngine is ReentrancyGuard {
      */
     function _burnDSC(
         uint256 amountDSCToBurn,
-        address onBehalfOf,
-        address dscFrom
+        address dscFrom,
+        address onBehalfOf
     ) private {
         s_DSCMinted[onBehalfOf] -= amountDSCToBurn;
         //first we take the DSC amount from user, bring to our contract and then we burn after
@@ -345,6 +352,7 @@ contract DSCEngine is ReentrancyGuard {
             address(this),
             amountDSCToBurn
         );
+        emit DSCBurned(amountDSCToBurn, dscFrom, onBehalfOf);
         if (!success) {
             revert DSCEngine__TransferFailed(); //unreachble
         }
@@ -527,23 +535,5 @@ contract DSCEngine is ReentrancyGuard {
 
     function getMinHealthFactor() external pure returns (uint256) {
         return MINIMUM_HEALTH_FACTOR;
-    }
-
-    //test
-    function getLatestPriceFeed() public view returns (uint256) {
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(
-            0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43
-        ); //USD/BTC
-        (
-            uint80 roundId,
-            int256 currentPrice,
-            ,
-            ,
-            uint80 answeredInRound
-        ) = priceFeed.latestRoundData(); //Grab the price
-        require(answeredInRound >= roundId, "incomplete round");
-
-        uint256 adjustedUsdPrice = uint256(currentPrice) * 1e10; //eg. 3000e18 (3k)
-        return adjustedUsdPrice;
     }
 }

@@ -9,6 +9,8 @@ import {DecentralizedStableCoin} from "../src/DecentralizedStableCoin.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
+import {DSCFailMock} from "./mocks/DSCFailMock.sol";
+import {ERC20FailMock} from "./mocks/ERC20FailMock.sol";
 
 contract DSCEngineTest is Test {
     DeployDSC deployer; //so tests mirror real deployment
@@ -27,6 +29,8 @@ contract DSCEngineTest is Test {
     uint256 public AMOUNT_COLLATERAL_DEPOSITED = 10 ether;
     uint256 public INITIAL_BALANCE = 30 ether;
     uint256 public MINTED_DSC_AMOUNT = 20000e18;
+    address[] public tokenAddresses; // constructor takes two parallel arrays
+    address[] public priceFeedAddresses;
 
     function setUp() public {
         deployer = new DeployDSC();
@@ -47,20 +51,16 @@ contract DSCEngineTest is Test {
         _;
     }
 
-    //   modifier mintsStableCoin() {
-    //     vm.startPrank(USER);
-    //     dsce.mintDsc(amount);
-    //     vm.stopPrank();
-    //     vm.stopPrank();
-    //     _;
-    // }
+    modifier mintsStableCoin() {
+        vm.startPrank(USER);
+        dsce.mintDsc(MINTED_DSC_AMOUNT);
+        vm.stopPrank();
+        _;
+    }
 
     ////////////////////////////////////////////////
     /////////----CONSTRUCTOR TEST------/////////////
     ////////////////////////////////////////////////
-    address[] public tokenAddresses; // constructor takes two parallel arrays
-    address[] public priceFeedAddresses;
-
     //test_<unitUnderTest>_<stateOrCondition>_<expectedOutcome/Behaviour>
 
     function test_constructor_reverts_ifTokenLengthDoesntMatchPriceFeeds()
@@ -76,6 +76,16 @@ contract DSCEngineTest is Test {
         );
         new DSCEngine(tokenAddresses, priceFeedAddresses, address(dsc)); //try to deploy
         //Without this test, someone can accidentally deploy DSCEngine with mismatched arrays, and mappings would break.
+    }
+
+    function test_constructor_revert_ifTokenOrPriceFeedAddressIsZero() public {
+        priceFeedAddresses.push(ethUsdPriceFeed);
+        priceFeedAddresses.push(btcUsdPriceFeed);
+        tokenAddresses.push(address(0));
+        tokenAddresses.push(address(0));
+
+        vm.expectRevert(DSCEngine.DSCEngine__NotAllowedTokenAddress.selector);
+        new DSCEngine(tokenAddresses, priceFeedAddresses, address(dsc));
     }
 
     ////////////////////////////////////////////////
@@ -165,6 +175,31 @@ contract DSCEngineTest is Test {
         assertEq(minted, 0);
     }
 
+    function test_depositCollateral_revertsOnTransferFail() public {
+        // Arrange
+        ERC20FailMock badCollateral = new ERC20FailMock(1000e18); //mock erc20 that always fails transfers
+
+        tokenAddresses.push(address(badCollateral));
+        priceFeedAddresses.push(ethUsdPriceFeed); // reuse existing price feed
+
+        DSCEngine dsceWithBadToken = new DSCEngine(
+            tokenAddresses,
+            priceFeedAddresses,
+            address(dsc)
+        ); // deploy new DSCEngine with the bad token, otherwise address won't be allowed
+
+        // Give USER some "badCollateral"
+        badCollateral.transfer(USER, 100e18);
+
+        vm.startPrank(USER);
+        badCollateral.approve(address(dsceWithBadToken), 100e18); //approve DSCEngine
+
+        // Act / Assert
+        vm.expectRevert(DSCEngine.DSCEngine__TransferFailed.selector);
+        dsceWithBadToken.depositCollateral(address(badCollateral), 100e18);
+        vm.stopPrank();
+    }
+
     ////////////////////////////////////////////////
     /////////////----MINT DSC TEST------////////////
     ////////////////////////////////////////////////
@@ -201,15 +236,48 @@ contract DSCEngineTest is Test {
         vm.stopPrank();
     }
 
-    function test_mintDsc_recordsDebtAndMints() public depositedCollateral {
+    function test_mintDsc_recordsDebtMintAndEmit() public depositedCollateral {
         // $30,000 collateral, adjusted = $24,000
+
         vm.startPrank(USER);
+        vm.expectEmit(true, true, true, true);
+        emit DSCEngine.DSCMinted(USER, MINTED_DSC_AMOUNT);
+
         dsce.mintDsc(MINTED_DSC_AMOUNT);
         vm.stopPrank();
 
         (uint256 minted, ) = dsce.getAccountInformation(USER);
+
+        // Assertions
         assertEq(minted, MINTED_DSC_AMOUNT);
         assertEq(dsc.balanceOf(USER), MINTED_DSC_AMOUNT);
+    }
+
+    function test_mintDsc_revertsOnMintFail() public {
+        // Arrange
+        DSCFailMock badDsc = new DSCFailMock();
+
+        tokenAddresses.push(weth); // normal WETH mock collateral
+        priceFeedAddresses.push(ethUsdPriceFeed);
+
+        DSCEngine badEngine = new DSCEngine(
+            tokenAddresses,
+            priceFeedAddresses,
+            address(badDsc)
+        );
+
+        // USER deposits collateral
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(
+            address(badEngine),
+            AMOUNT_COLLATERAL_DEPOSITED
+        );
+        badEngine.depositCollateral(weth, AMOUNT_COLLATERAL_DEPOSITED);
+
+        // Act / Assert
+        vm.expectRevert(DSCEngine.DSCEngine__MintFailed.selector);
+        badEngine.mintDsc(MINTED_DSC_AMOUNT); // should fail because badEngine.mint() always returns false
+        vm.stopPrank();
     }
 
     ////////////////////////////////////////////////
@@ -233,9 +301,56 @@ contract DSCEngineTest is Test {
         assertEq(dsc.balanceOf(USER), MINTED_DSC_AMOUNT);
     }
 
+    function test_burnDscAndRedeemCollateral_comboWorks()
+        public
+        depositedCollateral
+        mintsStableCoin
+    {
+        // Setup: USER deposits 30k > 24k collateral and mints 20K DSC
+
+        // Check initial state
+        (
+            uint256 totalDscMintedBefore,
+            uint256 collateralValueInUsdBefore
+        ) = dsce.getAccountInformation(USER);
+
+        uint256 dscToBurn = 5000e18;
+        uint256 collateralToRedeem = dsce.getTokenAmountFromDSC(
+            weth,
+            dscToBurn
+        ); //return is in Token Amount
+        uint256 usdValueFromRedemption = dsce.getUSDValue(
+            weth,
+            collateralToRedeem
+        ); //returns in USD
+
+        vm.startPrank(USER); // USER burns DSC and redeems collater
+        dsc.approve(address(dsce), dscToBurn);
+        dsce.burnDscAndRedeemCollateral(weth, collateralToRedeem, dscToBurn);
+        vm.stopPrank();
+
+        // Check final state
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce
+            .getAccountInformation(USER);
+
+        //asserts
+        assertEq(totalDscMinted, totalDscMintedBefore - dscToBurn); // 20k - 5k = 15k DSC left
+        assertEq(dsc.balanceOf(USER), MINTED_DSC_AMOUNT - dscToBurn); // 15k DSC left in wallet
+
+        assertEq(
+            collateralValueInUsd,
+            collateralValueInUsdBefore - usdValueFromRedemption
+        ); // all in USD
+        assertEq(
+            dsce.getCollateralDeposited(USER, weth),
+            AMOUNT_COLLATERAL_DEPOSITED - collateralToRedeem
+        ); //all in token units (WETH): 10ETH, 10ETH - redeemed WETH amount = WETH left
+    }
+
     ////////////////////////////////////////////////
     /////////////----BURN DSC TEST------////////////
     ////////////////////////////////////////////////
+
     function test_burnDsc_revertsOnZero() public {
         vm.expectRevert(
             DSCEngine.DSCEngine__AmountShouldBeMoreThanZero.selector
@@ -243,16 +358,26 @@ contract DSCEngineTest is Test {
         dsce.burnDsc(0);
     }
 
-    function test_burnDsc_reducesDebtAndSupply() public depositedCollateral {
+    function test_burnDsc_reducesDebtSupplyAndEmitsEvent()
+        public
+        depositedCollateral
+    {
         uint256 burnDscAmount = 5000e18;
 
         vm.startPrank(USER);
+
         dsce.mintDsc(MINTED_DSC_AMOUNT); //20k
         dsc.approve(address(dsce), burnDscAmount);
+
+        // Expect the DSCBurned event
+        vm.expectEmit(true, true, true, true);
+        emit DSCEngine.DSCBurned(burnDscAmount, USER, USER);
+
         dsce.burnDsc(burnDscAmount); //burns 5k, should be 15k left
         vm.stopPrank();
 
         (uint256 minted, ) = dsce.getAccountInformation(USER);
+
         assertEq(minted, 15000e18);
         assertEq(dsc.totalSupply(), 15000e18); // since only USER minted
     }
@@ -416,5 +541,72 @@ contract DSCEngineTest is Test {
         assertGt(newHF, 1e18); // HF improved
         assertEq(liquidatorWethBalance, expectedCollateralReceived); // got some ETH as reward
         assertGt(liquidatorHF, 1e18); // liquidator is solvent
+    }
+
+    ////////////////////////////////////////////////
+    ////////////----GETTERS TESTS ------////////////
+    ////////////////////////////////////////////////
+
+    function test_getMinHealthFactor_returnsConstant() public view {
+        uint256 minHF = dsce.getMinHealthFactor();
+        assertEq(minHF, 1e18);
+    }
+
+    function test_getHealthFactor_maxIfNoDebt() public view {
+        uint256 hf = dsce.getHealthFactor(USER);
+        assertEq(hf, type(uint256).max);
+    }
+
+    function test_getCollateralTokens_returnsArray() public view {
+        address[] memory tokens = dsce.getCollateralTokens();
+        //HelperConfig deploys with WETH + WBTC
+        assertEq(tokens.length, 2);
+        assertEq(tokens[0], weth);
+        assertEq(tokens[1], wbtc);
+    }
+
+    ////////////////////////////////////////////////
+    ////////----DecentralizedStableCoin ------//////
+    ////////////////////////////////////////////////
+
+    function test_mint_revertsIfZeroAddress() public {
+        vm.startPrank(address(dsce)); // engine is owner
+        vm.expectRevert(
+            DecentralizedStableCoin
+                .DecentralizedStableCoin__NotZeroAddress
+                .selector
+        );
+        dsc.mint(address(0), 100e18);
+        vm.stopPrank();
+    }
+
+    function test_mint_revertsIfZeroAmount() public {
+        vm.startPrank(address(dsce));
+        vm.expectRevert(
+            DecentralizedStableCoin.DecentralizedStableCoin__ZeroAmount.selector
+        );
+        dsc.mint(USER, 0);
+        vm.stopPrank();
+    }
+
+    function test_burn_revertsIfZeroAmount() public {
+        vm.startPrank(address(dsce));
+        vm.expectRevert(
+            DecentralizedStableCoin.DecentralizedStableCoin__ZeroAmount.selector
+        );
+        dsc.burn(0);
+        vm.stopPrank();
+    }
+
+    function test_burn_revertsIfExceedsBalance() public {
+        vm.startPrank(address(dsce));
+        // USER has 0 tokens, so trying to burn should revert
+        vm.expectRevert(
+            DecentralizedStableCoin
+                .DecentralizedStableCoin__BurnAmountExceedsBalance
+                .selector
+        );
+        dsc.burn(100e18);
+        vm.stopPrank();
     }
 }
