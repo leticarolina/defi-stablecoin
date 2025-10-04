@@ -8,9 +8,11 @@ import {DSCEngine} from "../src/DSCEngine.sol";
 import {DecentralizedStableCoin} from "../src/DecentralizedStableCoin.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
+import {AggregatorV3Interface} from "../lib/chainlink-evm/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
 import {DSCFailMock} from "./mocks/DSCFailMock.sol";
 import {ERC20FailMock} from "./mocks/ERC20FailMock.sol";
+import {OracleLib} from "./../src/libraries/OracleLib.sol";
 
 contract DSCEngineTest is Test {
     DeployDSC deployer; //so tests mirror real deployment
@@ -608,5 +610,22 @@ contract DSCEngineTest is Test {
         );
         dsc.burn(100e18);
         vm.stopPrank();
+    }
+
+    ////////////////////////////////////////////////
+    ////////////----ORACLE LIBRARY ------///////////
+    ////////////////////////////////////////////////
+    function test_stalePriceReverts() public {
+        // arrange
+        MockV3Aggregator mock = new MockV3Aggregator(8, 3000e18);
+
+        // simulate old update (set updatedAt way in the past)
+        vm.warp(block.timestamp + 2 hours); // move forward 2 hours
+
+        // act/assert
+        vm.expectRevert(OracleLib.OracleLib__StalePrice.selector);
+        OracleLib.staleCheckLatestRoundData(
+            AggregatorV3Interface(address(mock))
+        ); // library expects an interface type (AggregatorV3Interface)
     }
 }

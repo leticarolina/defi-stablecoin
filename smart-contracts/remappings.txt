@@ -1,0 +1,9 @@
+@openzeppelin/smart-contracts/=lib/openzeppelin-contracts/contracts/
+@chainlink/smart-contracts/=lib/chainlink-evm/contracts/
+@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/
+chainlink-evm/=lib/chainlink-evm/
+chainlink/=lib/chainlink/
+erc4626-tests/=lib/openzeppelin-contracts/lib/erc4626-tests/
+forge-std/=lib/forge-std/src/
+halmos-cheatcodes/=lib/openzeppelin-contracts/lib/halmos-cheatcodes/src/
+openzeppelin-contracts/=lib/openzeppelin-contracts/

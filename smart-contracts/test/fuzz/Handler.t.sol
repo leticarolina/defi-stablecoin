@@ -8,7 +8,7 @@ import {DeployDSC} from "../../script/DeployDSC.s.sol";
 import {DSCEngine} from "../../src/DSCEngine.sol";
 import {DecentralizedStableCoin} from "../../src/DecentralizedStableCoin.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import {MockV3Aggregator} from "@chainlink/contracts/src/v0.8/shared/mocks/MockV3Aggregator.sol";
+import {MockV3Aggregator} from "../../lib/chainlink-evm/contracts/src/v0.8/shared/mocks/MockV3Aggregator.sol";
 
 //here will be the functions that the handler can call before each invariant test
 contract Handler is StdInvariant, Test {
@@ -37,10 +37,14 @@ contract Handler is StdInvariant, Test {
         if (usersWithCollateralDeposited.length == 0) {
             return;
         }
-        address sender = usersWithCollateralDeposited[addressSeed % usersWithCollateralDeposited.length]; //get a random user from the array, addressSeed is a random number provided by Foundry
-        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getAccountInformation(sender);
-        int256 collateralAdjusted =
-            (int256(collateralValueInUsd) * int256(dsce.getLiquidationThreshold())) / int256(dsce.getPrecision()); //Apply liquidation threshold (80%) i.e. (collateralValueInUsd * 80 / 1e18)
+        address sender = usersWithCollateralDeposited[
+            addressSeed % usersWithCollateralDeposited.length
+        ]; //get a random user from the array, addressSeed is a random number provided by Foundry
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce
+            .getAccountInformation(sender);
+        int256 collateralAdjusted = (int256(collateralValueInUsd) *
+            int256(dsce.getLiquidationThreshold())) /
+            int256(dsce.getPrecision()); //Apply liquidation threshold (80%) i.e. (collateralValueInUsd * 80 / 1e18)
         int256 maxDscToMint = (collateralAdjusted - int256(totalDscMinted)); //divid
         if (maxDscToMint < 0) {
             return;
@@ -65,7 +69,10 @@ contract Handler is StdInvariant, Test {
      * @param amountCollateral The amount of collateral to deposit, bounded to a maximum size.
      * This is similar to depositCollateral function in DSCEngine.sol but with fuzzed params and we want this to always succeed
      */
-    function depositCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
+    function depositCollateral(
+        uint256 collateralSeed,
+        uint256 amountCollateral
+    ) public {
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
         amountCollateral = bound(amountCollateral, 1, MAX_DEPOSIT_SIZE); //bound is from stdutils, bounds the result to an amount
         //bound() means amountCollateral will always be between 1 and MAX_DEPOSIT_SIZE
@@ -80,10 +87,16 @@ contract Handler is StdInvariant, Test {
         vm.stopPrank();
     }
 
-    function redeemCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
+    function redeemCollateral(
+        uint256 collateralSeed,
+        uint256 amountCollateral
+    ) public {
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
         // getCollateralDeposited reads the user’s current balance using the *EOA* (msg.sender in Handler context)
-        uint256 maxCollateralToRedeem = dsce.getCollateralDeposited(msg.sender, address(collateral));
+        uint256 maxCollateralToRedeem = dsce.getCollateralDeposited(
+            msg.sender,
+            address(collateral)
+        );
         //they should only be redeeming as much as they put in the system
         amountCollateral = bound(amountCollateral, 0, maxCollateralToRedeem); //force the input values within a specific valid range
         if (amountCollateral == 0) {
@@ -104,7 +117,9 @@ contract Handler is StdInvariant, Test {
     //HELPERS
     //can only get a valid collateral type
     //this function will return either weth or wbtc based on the seed
-    function _getCollateralFromSeed(uint256 collateralSeed) private view returns (ERC20Mock) {
+    function _getCollateralFromSeed(
+        uint256 collateralSeed
+    ) private view returns (ERC20Mock) {
         if (collateralSeed % 2 == 0) {
             return weth;
         }
