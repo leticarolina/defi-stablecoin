@@ -78,7 +78,9 @@ export default function Home() {
   const [liquidationPreview, setLiquidationPreview] = useState(null);
 
 
-
+  /*//////////////////////////////////////////////////////////////
+                         CONNECT WALLET
+  //////////////////////////////////////////////////////////////*/
   const connectWallet = async () => {
     if (typeof window.ethereum === "undefined") {
       alert("MetaMask not found! Please install it.");
@@ -95,8 +97,6 @@ export default function Home() {
       setSigner(signer);
 
       // save contracts in state
-      // const dsce = new ethers.Contract(ENGINE_CONTRACT_ADDRESS, ABI, signer);
-      // const dsc = new ethers.Contract(STABLECOIN_CONTRACT_ADDRESS, ABI, signer);
       const dsce = new ethers.Contract(ENGINE_CONTRACT_ADDRESS, ABI, signer);
       const dsc = new ethers.Contract(STABLECOIN_CONTRACT_ADDRESS, ABI, signer);
 
@@ -110,6 +110,10 @@ export default function Home() {
     }
   }
 
+
+  /*//////////////////////////////////////////////////////////////
+                         LOAD USER STATS
+  //////////////////////////////////////////////////////////////*/
   const fetchUserStats = async (contract = dsceContract, user = userAddress) => {
     if (!contract || !user) return;
 
@@ -136,7 +140,9 @@ export default function Home() {
 
 
 
-
+  /*//////////////////////////////////////////////////////////////
+                         DEPOSIT AND MINT
+  //////////////////////////////////////////////////////////////*/
   const handleInputCollateralChange = async (e) => {
     const value = e.target.value;
     setCollateralAmount(value);
@@ -169,7 +175,7 @@ export default function Home() {
       // Step 1: Wrap ETH into WETH
       const weth = new ethers.Contract(
         WETH_ADDRESS,
-        ["function deposit() payable", "function approve(address spender, uint256 amount) public returns (bool)"],
+        ["function deposit() payable", "function approve(address spender, uint256 amount) public returns (bool)", "function allowance(address owner, address spender) public returns (uint256)"],
         signer
       );
       const tx1 = await weth.deposit({ value: collateral }); // wrap same amount of ETH
@@ -178,6 +184,12 @@ export default function Home() {
       // Step 2: Approve WETH for DSCEngine
       const tx2 = await weth.approve(ENGINE_CONTRACT_ADDRESS, collateral);
       await tx2.wait();
+      // Check existing allowance before approving - dropped for now
+      // const currentAllowance = await weth.allowance(userAddress, ENGINE_CONTRACT_ADDRESS);
+      // if (currentAllowance < collateral) {
+      //   const tx2 = await weth.approve(ENGINE_CONTRACT_ADDRESS, ethers.MaxUint256);
+      //   await tx2.wait();
+      // }
 
 
       // Step 3: Deposit & Mint in DSCEngine
@@ -187,37 +199,23 @@ export default function Home() {
         dscToMint
       );
       await tx3.wait();
+      setCollateralAmount("");
+      setMintAmount("");
+      setEthUsdPrice("");
+      setMaxMintable("");
       await fetchUserStats(dsceContract, userAddress);
 
-      alert("Deposit + Wrap + Mint successful ✅");
+      alert(" Wrap + Deposit + Mint successful ✅");
     } catch (err) {
-      console.error("Deposit & Mint failed:", err);
       alert("Transaction failed ❌");
     }
   };
 
-  // Burn DSC
-  // const handleBurnDsc = async () => {
-  //   try {
-  //     if (!dsceContract || !dscContract || !signer) return;
 
-  //     const amount = ethers.parseUnits(burnAmount, 18); // user input
-  //     // approve DSCEngine to take DSC
-  //     const tx1 = await dscContract.approve(ENGINE_CONTRACT_ADDRESS, amount);
-  //     await tx1.wait();
 
-  //     // call burn
-  //     const tx2 = await dsceContract.burnDsc(amount);
-  //     await tx2.wait();
-
-  //     alert("DSC burned successfully ✅");
-  //     await fetchUserStats();
-  //   } catch (err) {
-  //     console.error("Burn failed:", err);
-  //     alert("Burn failed ❌");
-  //   }
-  // };
-
+  /*//////////////////////////////////////////////////////////////
+                        BURN AND REDEEM
+  //////////////////////////////////////////////////////////////*/
   const handleBurnDsc = async () => {
     try {
       if (!signer) return alert("Connect your wallet first");
@@ -246,11 +244,13 @@ export default function Home() {
       const tx2 = await engine.burnDsc(amount);
       await tx2.wait();
 
-      alert("DSC burned successfully ✅");
       await fetchUserStats(engine, await signer.getAddress());
+      setBurnAmount("");
+      alert("LUSD burned successfully ✅");
+
     } catch (err) {
       console.error("Burn failed:", err);
-      alert("Burn failed ❌ (check console)");
+      alert("Burn failed ❌");
     }
   };
 
@@ -288,24 +288,33 @@ export default function Home() {
 
 
   // Redeem Collateral
-
   const handleRedeemCollateral = async () => {
     try {
       if (!dsceContract || !signer) return;
 
+      // const weth = new ethers.Contract(WETH_ADDRESS, ["function withdraw(uint256)"], signer);
       const amount = ethers.parseUnits(redeemAmount, 18);
 
+      //Burn DSC and redeem collateral (returns WETH)
       const tx = await dsceContract.redeemCollateral(WETH_ADDRESS, amount);
       await tx.wait();
-      alert("Redeem successful ✅");
+
+      // Immediately unwrap WETH → ETH
+      // const tx2 = await weth.withdraw(redeemAmount);
+      // await tx2.wait();
+
       await fetchUserStats(dsceContract, userAddress);
+      setRedeemAmount("");
+      alert("Redeem successful, ETH sent! ✅");
     } catch (err) {
-      console.error("Redeem failed:", err);
-      // alert("Redeem failed ❌");
+      console.log(err);
+      alert("Redeem failed ❌");
     }
   };
 
-
+  /*//////////////////////////////////////////////////////////////
+                        LIQUIDATION
+  //////////////////////////////////////////////////////////////*/
   // fetch target user stats
   const fetchTargetUserStats = async (addr) => {
     if (!dsceContract || !addr) return;
@@ -326,164 +335,6 @@ export default function Home() {
     }
   };
 
-
-  // const handleLiquidateInputChange = async (value) => {
-  //   if (!dsceContract || !value || !targetStats) return;
-
-  //   try {
-  //     // const dscAmount = ethers.parseUnits(value, 18);
-
-  //     const inputAmount = ethers.parseUnits(value, 18);
-  //     const targetDebt = ethers.parseUnits(targetStats.dscMinted, 18);
-
-  //     // 👇 Clamp to target’s actual debt
-  //     const dscAmount = inputAmount > targetDebt ? targetDebt : inputAmount;
-
-  //     // 1️⃣ Base and bonus collateral the liquidator will receive
-  //     const baseCollateral = await dsceContract.getTokenAmountFromDSC(WETH_ADDRESS, dscAmount);
-  //     const bonusCollateral = (baseCollateral * 10n) / 100n;
-  //     const totalCollateral = baseCollateral + bonusCollateral;
-
-  //     // 2️⃣ USD value of total collateral taken
-  //     const usdValue = await dsceContract.getUSDValue(WETH_ADDRESS, totalCollateral);
-
-  //     // 3️⃣ Compute target’s projected HF after liquidation
-  //     const targetMinted = ethers.parseUnits(targetStats.dscMinted, 18);
-  //     const targetCollateralUsd = ethers.parseUnits(targetStats.collateralUsd, 18);
-
-  //     const newTargetMinted = targetMinted - dscAmount;
-  //     const newTargetCollateralUsd = targetCollateralUsd - usdValue;
-
-  //     const newTargetHF = await dsceContract.calculateHealthFactor(
-  //       newTargetMinted,
-  //       newTargetCollateralUsd
-  //     );
-
-  //     // 4️⃣ Update UI preview
-  //     setLiquidationPreview({
-  //       base: ethers.formatUnits(baseCollateral, 18),
-  //       bonus: ethers.formatUnits(bonusCollateral, 18),
-  //       total: ethers.formatUnits(totalCollateral, 18),
-  //       usd: ethers.formatUnits(usdValue, 18),
-  //       targetProjectedHF: Number(ethers.formatUnits(newTargetHF, 18)).toFixed(2),
-  //     });
-  //   } catch (err) {
-  //     console.error("Failed to preview liquidation:", err);
-  //     setLiquidationPreview(null);
-  //   }
-  // };
-
-  // const handleLiquidateInputChange = async (value) => {
-  //   if (!dsceContract || !value || !targetAddress || !targetStats) return;
-
-  //   try {
-  //     const inputAmount = Number(value);
-  //     const targetDebt = Number(targetStats.dscMinted);
-
-  //     // Clamp to target’s actual DSC debt
-  //     if (inputAmount > targetDebt) {
-  //       setLiquidateAmount(targetDebt.toString());
-  //     } else {
-  //       setLiquidateAmount(value);
-  //     }
-
-  //     const dscAmount = ethers.parseUnits(
-  //       inputAmount > targetDebt ? targetDebt.toString() : value,
-  //       18
-  //     );
-
-  //     // 1️⃣ Base + bonus collateral to receive
-  //     const baseCollateral = await dsceContract.getTokenAmountFromDSC(WETH_ADDRESS, dscAmount);
-  //     const bonusCollateral = (baseCollateral * 10n) / 100n;
-  //     const totalCollateral = baseCollateral + bonusCollateral;
-  //     const usdValue = await dsceContract.getUSDValue(WETH_ADDRESS, totalCollateral);
-
-  //     // 2️⃣ Compute new target HF
-  //     const targetMinted = ethers.parseUnits(targetStats.dscMinted, 18);
-  //     const targetCollateralUsd = ethers.parseUnits(targetStats.collateralUsd, 18);
-
-  //     const newTargetDebt = targetMinted > dscAmount ? targetMinted - dscAmount : 0n;
-  //     const newTargetCollateralUsd =
-  //       targetCollateralUsd > usdValue ? targetCollateralUsd - usdValue : 0n;
-
-  //     let newTargetHF;
-  //     if (newTargetDebt === 0n) {
-  //       newTargetHF = "∞";
-  //     } else {
-  //       const hf = await dsceContract.calculateHealthFactor(
-  //         newTargetDebt,
-  //         newTargetCollateralUsd
-  //       );
-  //       newTargetHF = Number(ethers.formatUnits(hf, 18)).toFixed(2);
-  //     }
-
-  //     // 3️⃣ Update preview
-  //     setLiquidationPreview({
-  //       base: ethers.formatUnits(baseCollateral, 18),
-  //       bonus: ethers.formatUnits(bonusCollateral, 18),
-  //       total: ethers.formatUnits(totalCollateral, 18),
-  //       usd: ethers.formatUnits(usdValue, 18),
-  //       targetHF: newTargetHF,
-  //       capped: inputAmount > targetDebt,
-  //     });
-  //   } catch (err) {
-  //     console.error("Failed to preview liquidation:", err);
-  //     setLiquidationPreview(null);
-  //   }
-  // };
-
-
-
-  // const handleLiquidateInputChange = async (value) => {
-  //   if (!dsceContract || !value || !targetAddress || !targetStats) return;
-
-  //   try {
-  //     const inputAmount = Number(value);
-  //     const targetDebt = Number(targetStats.dscMinted);
-
-  //     // Clamp UI input, but don't affect calculations (show raw input behavior)
-  //     if (inputAmount > targetDebt) {
-  //       setLiquidateAmount(value); // don't snap back
-  //     } else {
-  //       setLiquidateAmount(value);
-  //     }
-
-  //     const dscAmount = ethers.parseUnits(value, 18);
-
-  //     // 1️⃣ Base + bonus collateral to receive
-  //     const baseCollateral = await dsceContract.getTokenAmountFromDSC(WETH_ADDRESS, dscAmount);
-  //     const bonusCollateral = (baseCollateral * 10n) / 100n;
-  //     const totalCollateral = baseCollateral + bonusCollateral;
-  //     const usdValue = await dsceContract.getUSDValue(WETH_ADDRESS, totalCollateral);
-
-  //     // 2️⃣ Compute new target HF (always compute)
-  //     const targetMinted = ethers.parseUnits(targetStats.dscMinted, 18);
-  //     const targetCollateralUsd = ethers.parseUnits(targetStats.collateralUsd, 18);
-
-  //     const newTargetDebt = targetMinted > dscAmount ? targetMinted - dscAmount : 0n;
-  //     const newTargetCollateralUsd =
-  //       targetCollateralUsd > usdValue ? targetCollateralUsd - usdValue : 0n;
-
-  //     const newTargetHF = await dsceContract.calculateHealthFactor(
-  //       newTargetDebt,
-  //       newTargetCollateralUsd
-  //     );
-
-  //     // 3️⃣ Update preview — always show HF, even if it’s absurd
-  //     setLiquidationPreview({
-  //       base: ethers.formatUnits(baseCollateral, 18),
-  //       bonus: ethers.formatUnits(bonusCollateral, 18),
-  //       total: ethers.formatUnits(totalCollateral, 18),
-  //       usd: ethers.formatUnits(usdValue, 18),
-  //       targetHF: Number(ethers.formatUnits(newTargetHF, 18)).toFixed(4),
-  //       capped: inputAmount > targetDebt,
-  //     });
-  //   } catch (err) {
-  //     console.error("Failed to preview liquidation:", err);
-  //     setLiquidationPreview(null);
-  //   }
-  // };
-
   const handleLiquidateInputChange = async (value) => {
     if (!dsceContract || !value || !targetAddress || !targetStats) return;
 
@@ -500,13 +351,13 @@ export default function Home() {
         18
       );
 
-      // 1️⃣ Base + bonus collateral to receive
+      // 1 Base + bonus collateral to receive
       const baseCollateral = await dsceContract.getTokenAmountFromDSC(WETH_ADDRESS, dscAmount);
       const bonusCollateral = (baseCollateral * 10n) / 100n;
       const totalCollateral = baseCollateral + bonusCollateral;
       const usdValue = await dsceContract.getUSDValue(WETH_ADDRESS, totalCollateral);
 
-      // 2️⃣ Compute new target HF
+      // 2 Compute new target HF
       const targetMinted = ethers.parseUnits(targetStats.dscMinted, 18);
       const targetCollateralUsd = ethers.parseUnits(targetStats.collateralUsd, 18);
 
@@ -517,7 +368,7 @@ export default function Home() {
       const hf = await dsceContract.calculateHealthFactor(newTargetDebt, newTargetCollateralUsd);
       const newTargetHF = Number(ethers.formatUnits(hf, 18)).toFixed(2);
 
-      // 3️⃣ Update preview
+      // 3 Update preview
       setLiquidationPreview({
         base: ethers.formatUnits(baseCollateral, 18),
         bonus: ethers.formatUnits(bonusCollateral, 18),
@@ -531,9 +382,6 @@ export default function Home() {
       setLiquidationPreview(null);
     }
   };
-
-
-
 
 
   // Execute liquidation
@@ -556,16 +404,16 @@ export default function Home() {
       // Parse the DSC amount
       const amount = ethers.parseUnits(liquidateAmount, 18);
 
-      // (optional) Check wallet DSC balance
+      // Check wallet DSC balance
       const walletAddr = await signer.getAddress();
       const balance = await dscErc20.balanceOf(walletAddr);
       if (balance < amount) return alert("Not enough DSC to cover liquidation");
 
-      // 1️⃣ Approve engine to spend DSC
+      // 1 Approve engine to spend DSC
       const approveTx = await dscErc20.approve(ENGINE_CONTRACT_ADDRESS, amount);
       await approveTx.wait();
 
-      // 2️⃣ Call engine.liquidate
+      // 2 Call engine.liquidate
       const liquidateTx = await engine.liquidate(WETH_ADDRESS, targetAddress, amount);
       await liquidateTx.wait();
 
@@ -587,247 +435,360 @@ export default function Home() {
 
     <>
 
-      {userAddress ?
-        <span className="px-3 py-1 text-s rounded-full bg-green-100 text-green-900">
-          {formatAddress(userAddress)}
-        </span> : <button
-          onClick={connectWallet}
-          className="bg-blue-500 text-white px-4 py-2 rounded"
-        >
-          Connect Wallet
-        </button>}
-
-
-      <div className="min-h-screen bg-gray-50 p-8 space-y-8 flex">
-
-        {/* Deposit & Mint Section */}
-        <div className="p-6 bg-white rounded-xl shadow">
-          <h2 className="text-xl font-bold mb-4">Deposit & Mint</h2>
-          <div className="flex flex-col gap-3">
-            <input
-              type="number"
-              placeholder="ETH Amount"
-              className="border p-2 rounded"
-              value={collateralAmount}
-              onChange={handleInputCollateralChange}
-            />
-            <input type="number" placeholder="DSC to Mint" className="border p-2 rounded" value={mintAmount} onChange={(e) => setMintAmount(e.target.value)} />
-            <button onClick={handleDepositAndMint} className="bg-blue-500 text-white py-2 px-4 rounded">Deposit & Mint</button>
-          </div>
-          <div className="mt-4 text-sm text-gray-600 space-y-1">
-            <p>ETH/USD Price:  {ethUsdPrice ? `$${ethUsdPrice}` : "Loading..."}</p>
-            <p>Max to Mint: {maxMintable ? `${maxMintable} DSC` : "Insert ETH amount"}</p>
-          </div>
-        </div>
-
-        {/* Burn & Redeem Section */}
-        {/* Burn DSC Section */}
-        <div className="p-6 bg-white rounded-xl shadow">
-          <h2 className="text-xl font-bold mb-4">Burn DSC</h2>
-          <div className="flex flex-col gap-3">
-            <input
-              type="number"
-              placeholder="Amount to Burn"
-              className="border p-2 rounded"
-              value={burnAmount}
-              onChange={(e) => setBurnAmount(e.target.value)}
-            />
-            <button
-              onClick={handleBurnDsc}
-              className="bg-red-500 text-white py-2 px-4 rounded"
-              disabled={!burnAmount || (userStats && Number(burnAmount) > Number(userStats.dscMinted))}
+      <header className=" flex flex-col items-center justify-center w-full border-b border-gray-200 bg-white shadow-sm ">
+        {/* Navbar */}
+        <nav className="bg-gradient-to-b from-purple-200 flex justify-between items-center w-full  px-6 py-4 md:pt-4 md:pb-0">
+          {/* Left: Logo / Stablecoin Name */}
+          <div className="flex items-center gap-2">
+            <a
+              href="https://letiazevedo.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 group cursor-pointer"
             >
-              Burn DSC
-            </button>
-            <p className="text-sm text-gray-600">
-              Max burnable: {userStats ? `${userStats.dscMinted} DSC` : "..."}
-            </p>
-          </div>
-        </div>
-
-        {/* Redeem Collateral Section */}
-        <div className="p-6 bg-white rounded-xl shadow">
-          <h2 className="text-xl font-bold mb-4">Redeem Collateral</h2>
-          <div className="flex flex-col gap-3">
-            <input
-              type="number"
-              placeholder="Collateral to Redeem"
-              className="border p-2 rounded"
-              value={redeemAmount}
-              onChange={handleRedeemInputChange}
-            />
-
-            <button
-              onClick={handleRedeemCollateral}
-              className="bg-blue-500 text-white py-2 px-4 rounded"
-              disabled={!redeemAmount || (userStats && Number(redeemAmount) > Number(userStats.collateralDeposited))}
-            >
-              Redeem Collateral
-            </button>
-            <p className="text-sm text-gray-600">
-              Projected HF: {projectedHF ? projectedHF : userStats ? Number(userStats.healthFactor) : ""}
-            </p>
-            <p className="text-sm text-gray-600">
-              Max redeemable: {userStats ? `${userStats.collateralDeposited} WETH` : "..."}
-            </p>
-
-          </div>
-        </div>
-
-
-        {/* Liquidation Section */}
-        <div className="p-6 bg-white rounded-xl shadow">
-          <h2 className="text-xl font-bold mb-4">Liquidate</h2>
-          <div className="flex flex-col gap-3">
-            {/* Target Address Input */}
-            <input
-              type="text"
-              placeholder="Target User Address"
-              className="border p-2 rounded"
-              value={targetAddress}
-              onChange={(e) => {
-                const addr = e.target.value;
-                setTargetAddress(addr);
-                if (addr && ethers.isAddress(addr)) {
-                  fetchTargetUserStats(addr);
-                } else {
-                  setTargetStats(null);
-                }
-              }}
-            />
-
-            {/* Target Stats */}
-            <div className="mt-3 text-sm space-y-1">
-              <p>Target DSC Minted: {targetStats ? targetStats.dscMinted : "..."}</p>
-              <p>
-                Health Factor:{" "}
-                {targetStats ? (
-                  <span
-                    className={
-                      Number(targetStats.healthFactor) < 1
-                        ? "text-red-600 font-bold"
-                        : Number(targetStats.healthFactor) < 1.2
-                          ? "text-yellow-600 font-bold"
-                          : Number(targetStats.healthFactor) < 1.5
-                            ? "text-orange-500 font-bold"
-                            : "text-green-600 font-bold"
-                    }
-                  >
-                    {Number(targetStats.healthFactor).toFixed(2)}{" "}
-                    {Number(targetStats.healthFactor) < 1
-                      ? "(Liquidatable)"
-                      : Number(targetStats.healthFactor) < 1.2
-                        ? "(Danger Zone)"
-                        : Number(targetStats.healthFactor) < 1.5
-                          ? "(At Risk)"
-                          : "(Safe)"}
-                  </span>
-                ) : "..."}
-              </p>
-            </div>
-
-            {/* Input: DSC to Burn */}
-            <input
-              type="number"
-              placeholder="DSC to Burn"
-              className="border p-2 rounded"
-              value={liquidateAmount}
-              onChange={(e) => {
-                setLiquidateAmount(e.target.value);
-                handleLiquidateInputChange(e.target.value);
-              }}
-            />
-
-            {liquidationPreview && (
-              <div className="mt-2 text-sm text-gray-600 space-y-1">
-
-                {liquidationPreview.overDebt && (
-                  <p className="text-xs text-orange-500 italic">
-                    ⚠️ Max burnable = ({targetStats.dscMinted} DSC)
-                  </p>
-                )}
-                <p>
-                  You will receive:{" "}
-                  {`${Number(liquidationPreview.total).toFixed(6)} WETH (~$${Number(liquidationPreview.usd).toFixed(2)})`}
-                </p>
-                <p className="italic text-xs text-gray-500">Includes 10% bonus</p>
-
-                <p>
-                  Target projected HF after liquidation:{" "}
-                  <span
-                    className={
-                      Number(liquidationPreview.targetHF) < 1
-                        ? "text-red-600 font-bold"
-                        : Number(liquidationPreview.targetHF) < 1.2
-                          ? "text-yellow-600 font-bold"
-                          : Number(liquidationPreview.targetHF) < 1.5
-                            ? "text-orange-500 font-bold"
-                            : "text-green-600 font-bold"
-                    }
-                  >
-                    {liquidationPreview.targetHF}
-                  </span>
-                </p>
-
-
+              <div className="w-8 h-8 rounded-full bg-purple-600 flex items-center justify-center text-white font-bold text-lg">
+                L
               </div>
+              <h1 className="text-xl font-semibold text-purple-700 hover:text-purple-400">LUSD</h1>
+            </a>
+          </div>
+
+          {/* Right: Connect Wallet */}
+          <div>
+            {userAddress ? (
+              <button
+                className="px-4 py-2 text-sm rounded-full bg-green-100 text-green-900 border border-green-300 hover:bg-green-200 transition-all"
+              >
+                {formatAddress(userAddress)}
+              </button>
+            ) : (
+              <button
+                onClick={connectWallet}
+                className="bg-purple-600 text-white px-5 py-2 rounded-full font-medium hover:bg-purple-800 transition-all"
+              >
+                Connect Wallet
+              </button>
+            )}
+          </div>
+        </nav>
+
+        {/* Title Section */}
+        <div className="text-center pb-4 mt-10 mb-8">
+          <h2 className="text-3xl md:text-4xl font-extrabold text-purple-900">
+            Stablecoin Unlock Liquidity with ETH
+          </h2>
+          <p className="text-gray-600 mt-3 text-base md:text-lg mb-2 px-4">
+            Deposit Ethereum to mint LUSD or burn your LUSD to redeem Wrapped Ethereum.
+          </p>
+        </div>
+      </header>
+
+      {/* User Stats Bar */}
+      <section className="w-full bg-gradient-to-r from-blue-100 to-purple-100 py-4 border-y border-gray-200 mb-4">
+        <div className="max-w-6xl mx-auto flex flex-wrap justify-evenly items-center px-6 gap-4 text-sm md:text-base">
+          {/* <div className="max-w-6xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-y-2 px-6 text-sm md:text-base"> */}
+
+          {/* Health Status */}
+          <div className="flex items-center gap-2 relative">
+            <span className="text-gray-700 font-semibold">Health Status:</span>
+            {userStats ? (
+              <span
+                className={`font-bold ${Number(userStats.healthFactor) < 1
+                  ? "text-red-600"
+                  : Number(userStats.healthFactor) < 1.2
+                    ? "text-yellow-600"
+                    : Number(userStats.healthFactor) < 1.5
+                      ? "text-orange-500"
+                      : "text-green-600"
+                  }`}
+              >
+                {Number(userStats.healthFactor).toFixed(2)}{" "}
+                {Number(userStats.healthFactor) < 1
+                  ? "(Liquidatable)"
+                  : Number(userStats.healthFactor) < 1.2
+                    ? "(Danger Zone)"
+                    : Number(userStats.healthFactor) < 1.5
+                      ? "(At Risk)"
+                      : "(Safe)"}
+              </span>
+            ) : (
+              <span className="text-gray-400">...</span>
             )}
 
 
+            {/* Info Icon + Tooltip */}
+            <div className="relative group">
+              <img
+                src="/info.svg"
+                alt="info"
+                className="w-4 h-4 cursor-pointer opacity-70 hover:opacity-100 transition"
+              />
 
-            {/* Liquidate Button */}
-            <button
-              onClick={handleLiquidate}
-              className="bg-purple-600 text-white py-2 px-4 rounded"
-              disabled={!targetAddress || !liquidateAmount}
-            >
-              Liquidate User
-            </button>
+              <div className="absolute left-2 -translate-x-2 hidden group-hover:block bg-gray-600 text-white text-xs rounded-md px-3 py-2 w-64 shadow-lg">
+                <p><span className="text-red-400 font-semibold">{"< 1.0"}</span> — Liquidatable: your collateral no longer covers your debt add more collateral or anyone can liquidate you.</p>
+                <p><span className="text-yellow-400 font-semibold">1.0–1.2</span> — Danger Zone: very close to liquidation. Add more collateral or burn DSC soon.
+                </p>
+                <p><span className="text-orange-400 font-semibold">1.2–1.5</span> — At Risk: still safe, but monitor collateral if price drops could push you into danger.</p>
+                <p><span className="text-green-400 font-semibold">{"> 1.5"}</span> — Safe: your position is healthy and well-collateralized.</p>
+              </div>
+            </div>
+
+
+            {/* Collateral Deposited */}
+            <div>
+              <span className="text-gray-700 font-semibold">Amount Deposited:</span>{" "}
+              <span className="text-gray-800">
+                {userStats ? `${userStats.collateralDeposited} WETH` : "..."}
+              </span>
+            </div>
+
+            {/* Collateral Value */}
+            <div >
+              <span className="text-gray-700 font-semibold">Collateral Value (USD):</span>{" "}
+              <span className="text-gray-800">
+                {userStats ? `$${userStats.collateralUsd}` : "..."}
+              </span>
+            </div>
+
+            {/* LUSD Minted */}
+            <div>
+              <span className="text-gray-700 font-semibold">LUSD Minted:</span>{" "}
+              <span className="text-gray-800">
+                {userStats ? `${userStats.dscMinted} DSC` : "..."}
+              </span>
+            </div>
           </div>
         </div>
+      </section>
 
+      <main className=" py-4 px-3">
+        <div className="max-w-7xl mx-auto grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+          {/* Deposit & Mint */}
+          <div className="p-6 bg-gradient-to-br from-blue-50 via-indigo-100 to-blue-200 rounded-2xl shadow-md border border-blue-200 hover:shadow-lg transition-shadow">
+            <h2 className="text-lg font-semibold text-blue-800 mb-2 flex items-center gap-2">
+              💵 Deposit & Mint
+            </h2>
+            <div className="flex flex-col gap-3">
+              <input
+                type="number"
+                placeholder="ETH Amount"
+                className="border border-blue-200 p-2 rounded-md focus:ring-2 focus:ring-blue-400 outline-none"
+                value={collateralAmount}
+                onChange={handleInputCollateralChange}
+              />
+              <input
+                type="number"
+                placeholder="LUSD to Mint"
+                className="border border-blue-200 p-2 rounded-md focus:ring-2 focus:ring-blue-400 outline-none"
+                value={mintAmount}
+                onChange={(e) => setMintAmount(e.target.value)}
+              />
+              <button
+                onClick={handleDepositAndMint}
+                className="bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition-all"
+              >
+                {"Wrap > Deposit > Mint"}
+              </button>
+            </div>
+            <div className="mt-4 text-sm text-gray-700 space-y-1">
+              <p>ETH/USD Price: {ethUsdPrice ? `$${ethUsdPrice}` : "..."}</p>
+              <p>Max to Mint: {maxMintable ? `${maxMintable} DSC` : "..."}</p>
+            </div>
+          </div>
 
+          {/* Burn DSC */}
+          <div className="p-6 bg-gradient-to-br from-rose-50 via-rose-100 to-red-200 rounded-2xl shadow-md border border-rose-200 hover:shadow-lg transition-shadow">
+            <h2 className="text-lg font-semibold text-red-700 mb-2 flex items-center gap-2">
+              🔥 Burn LUSD
+            </h2>
+            <div className="flex flex-col gap-3">
+              <input
+                type="number"
+                placeholder="Amount to Burn"
+                className="border border-rose-200 p-2 rounded-md focus:ring-2 focus:ring-red-400 outline-none"
+                value={burnAmount}
+                onChange={(e) => setBurnAmount(e.target.value)}
+              />
+              <button
+                onClick={handleBurnDsc}
+                className="bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg font-medium transition-all"
+                disabled={!burnAmount || (userStats && Number(burnAmount) > Number(userStats.dscMinted))}
+              >
+                Burn LUSD
+              </button>
+              <p className="text-sm text-gray-700">
+                Max burnable: {userStats ? `${userStats.dscMinted} LUSD` : "..."}
+              </p>
+            </div>
+          </div>
 
+          {/* Redeem Collateral */}
+          <div className="p-6 bg-gradient-to-br from-green-50 via-green-100 to-emerald-200 rounded-2xl shadow-md border border-green-200 hover:shadow-lg transition-shadow">
+            <h2 className="text-lg font-semibold text-green-700 mb-2 flex items-center gap-2">
+              Redeem WETH
+            </h2>
+            <div className="flex flex-col gap-3">
+              <input
+                type="number"
+                placeholder="Collateral to Redeem"
+                className="border border-green-200 p-2 rounded-md focus:ring-2 focus:ring-green-400 outline-none"
+                value={redeemAmount}
+                onChange={handleRedeemInputChange}
+              />
+              <button
+                onClick={handleRedeemCollateral}
+                className="bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium transition-all"
+                disabled={!redeemAmount || (userStats && Number(redeemAmount) > Number(userStats.collateralDeposited))}
+              >
+                Redeem Collateral
+              </button>
+              <div className="text-sm text-gray-700 space-y-1">
+                <p>Projected Health Status: {projectedHF || (userStats ? Number(userStats.healthFactor).toFixed(2) : "")}</p>
+                <p>Max redeemable: {userStats ? `${userStats.collateralDeposited} WETH` : "..."}</p>
+              </div>
+            </div>
+          </div>
 
-        {/* User Stats */}
-        <div className="p-6 bg-white rounded-xl shadow">
-          <h2 className="text-xl font-bold mb-4">User Stats</h2>
-          <div className="space-y-2">
-            <p>
-              Health Status:{" "}
-              {userStats && (
-                <>
-                  <span
-                    className={
-                      Number(userStats.healthFactor) < 1
-                        ? "text-red-600 font-bold"
-                        : Number(userStats.healthFactor) < 1.2
-                          ? "text-yellow-600 font-bold"
-                          : Number(userStats.healthFactor) < 1.5
-                            ? "text-orange-500 font-bold"
-                            : "text-green-600 font-bold"
-                    }
-                  >
-                    {Number(userStats.healthFactor).toFixed(2)}{" "}
-                    {Number(userStats.healthFactor) < 1
-                      ? "(Liquidatable)"
-                      : Number(userStats.healthFactor) < 1.2
-                        ? "(Danger Zone)"
-                        : Number(userStats.healthFactor) < 1.5
-                          ? "(At Risk)"
-                          : "(Safe)"}
+          {/* Liquidate */}
+          <div className="p-6 bg-gradient-to-br from-white to-indigo-100 rounded-2xl shadow-md border border-indigo-200 hover:shadow-lg transition-shadow">
+            <h2 className="text-lg font-semibold text-indigo-700 mb-2 flex items-center gap-2">
+              Liquidate
+            </h2>
+
+            <div className="flex flex-col gap-3">
+              {/* Target Address */}
+              <input
+                type="text"
+                placeholder="Check User Address"
+                className="border border-indigo-200 p-2 rounded-md focus:ring-2 focus:ring-indigo-400 outline-none"
+                value={targetAddress}
+                onChange={(e) => {
+                  const addr = e.target.value;
+                  setTargetAddress(addr);
+                  if (addr && ethers.isAddress(addr)) {
+                    fetchTargetUserStats(addr);
+                  } else {
+                    setTargetStats(null);
+                  }
+                }}
+              />
+
+              {/* Target Stats */}
+              <div className="text-sm space-y-1 text-gray-700">
+                <p>Target LUSD Minted: <span className="font-medium">{targetStats ? targetStats.dscMinted : "..."}</span></p>
+                <p>
+                  Health Status:{" "}
+                  {targetStats ? (
+                    <span
+                      className={`font-bold ${Number(targetStats.healthFactor) < 1
+                        ? "text-red-600"
+                        : Number(targetStats.healthFactor) < 1.2
+                          ? "text-yellow-600"
+                          : Number(targetStats.healthFactor) < 1.5
+                            ? "text-orange-500"
+                            : "text-green-600"
+                        }`}
+                    >
+                      {Number(targetStats.healthFactor).toFixed(2)}{" "}
+                      {Number(targetStats.healthFactor) < 1
+                        ? "(Liquidatable)"
+                        : Number(targetStats.healthFactor) < 1.2
+                          ? "(Danger Zone)"
+                          : Number(targetStats.healthFactor) < 1.5
+                            ? "(At Risk)"
+                            : "(Safe)"}
+                    </span>
+                  ) : (
+                    "..."
+                  )}
+                </p>
+              </div>
+
+              {/* DSC to Burn */}
+              <input
+                type="number"
+                placeholder="LUSD to Burn"
+                className="border border-indigo-200 p-2 rounded-md focus:ring-2 focus:ring-indigo-400 outline-none"
+                value={liquidateAmount}
+                onChange={(e) => {
+                  setLiquidateAmount(e.target.value);
+                  handleLiquidateInputChange(e.target.value);
+                }}
+              />
+
+              {/* Preview — amount received + projected target HF */}
+              <div className="text-sm text-gray-700 space-y-1">
+                {/* Over-burn warning (uses your existing .overDebt flag) */}
+                {liquidationPreview?.overDebt && (
+                  <p className="text-xs text-orange-600 italic">
+                    ⚠️ Max burnable: {targetStats?.dscMinted ?? "..."} LUSD
+                  </p>
+                )}
+
+                <p>
+                  You’ll receive:{" "}
+                  {/* <span className="font-semibold text-indigo-800">
+                      {Number(liquidationPreview.total).toFixed(6)} WETH (~$
+                      {Number(liquidationPreview.usd).toFixed(2)})
+                    </span> */}
+                  <span className="font-semibold text-indigo-800">
+                    {liquidationPreview
+                      ? `${Number(liquidationPreview.total).toFixed(6)} WETH (~$${Number(
+                        liquidationPreview.usd
+                      ).toFixed(2)})`
+                      : "..."}
                   </span>
-                </>
-              )}
-            </p>
+                  <span className="italic text-xs text-gray-500"> Includes 10% bonus</span>
+                </p>
+                {/* <p className="italic text-xs text-gray-500">Includes 10% bonus</p> */}
 
-            <p>Collateral Deposited: {userStats ? `${userStats.collateralDeposited} WETH` : "..."}</p>
-            <p>Collateral Value (USD): {userStats ? `$${userStats.collateralUsd}` : "..."}</p>
-            <p>DSC Minted: {userStats ? `${userStats.dscMinted} DSC` : "..."}</p>
+                <p>
+                  Target Health after burn:{" "}
+                  {/* <span
+                      className={`font-bold ${Number(liquidationPreview?.targetHF) < 1
+                        ? "text-red-600"
+                        : Number(liquidationPreview?.targetHF) < 1.2
+                          ? "text-yellow-600"
+                          : Number(liquidationPreview?.targetHF) < 1.5
+                            ? "text-orange-500"
+                            : "text-green-600"
+                        }`}
+                    >
+                      {liquidationPreview.targetHF}
+                    </span> */}
+                  <span
+                    className={`font-bold ${liquidationPreview
+                      ? Number(liquidationPreview.targetHF) < 1
+                        ? "text-red-600"
+                        : Number(liquidationPreview.targetHF) < 1.2
+                          ? "text-yellow-600"
+                          : Number(liquidationPreview.targetHF) < 1.5
+                            ? "text-orange-500"
+                            : "text-green-600"
+                      : "text-gray-400"
+                      }`}
+                  >
+                    {liquidationPreview ? liquidationPreview.targetHF : "..."}
+                  </span>
+                </p>
+              </div>
+
+
+              {/* Action */}
+              <button
+                onClick={handleLiquidate}
+                className=" bg-indigo-600 hover:bg-indigo-700 text-white py-2 rounded-lg font-medium transition-all disabled:opacity-60"
+                disabled={!targetAddress || !liquidateAmount}
+              >
+                Liquidate User
+              </button>
+            </div>
           </div>
-        </div>
 
-      </div >
+
+        </div>
+      </main>
+
 
     </>
   )
