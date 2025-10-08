@@ -4,16 +4,16 @@ pragma solidity ^0.8.18;
 
 import {Test, console} from "forge-std/Test.sol";
 import {StdInvariant} from "forge-std/StdInvariant.sol"; //so test contract can use Foundry’s invariant testing helpers — e.g. targetContract(), targetSelector(), fuzzing state, etc.
-import {DeployDSC} from "../../script/DeployDSC.s.sol";
-import {DSCEngine} from "../../src/DSCEngine.sol";
+import {DeployAZD} from "../../script/DeployAZD.s.sol";
+import {AZDEngine} from "../../src/AZDEngine.sol";
 import {DecentralizedStableCoin} from "../../src/DecentralizedStableCoin.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
 import {MockV3Aggregator} from "../../lib/chainlink-evm/contracts/src/v0.8/shared/mocks/MockV3Aggregator.sol";
 
 //here will be the functions that the handler can call before each invariant test
 contract Handler is StdInvariant, Test {
-    DSCEngine dsce; //so the handler knows what the dsc engine is
-    DecentralizedStableCoin dsc;
+    AZDEngine AZDe; //so the handler knows what the AZD engine is
+    DecentralizedStableCoin AZD;
     ERC20Mock weth;
     ERC20Mock wbtc;
     uint256 MAX_DEPOSIT_SIZE = type(uint96).max; //get the max uint96 value
@@ -22,35 +22,35 @@ contract Handler is StdInvariant, Test {
     MockV3Aggregator public ethUsdPriceFeed;
     address public USER = makeAddr("user");
 
-    constructor(DSCEngine _dscEngine, DecentralizedStableCoin _dsc) {
-        dsce = _dscEngine;
-        dsc = _dsc;
+    constructor(AZDEngine _AZDEngine, DecentralizedStableCoin _AZD) {
+        AZDe = _AZDEngine;
+        AZD = _AZD;
 
-        address[] memory collateralTokens = dsce.getCollateralTokens();
+        address[] memory collateralTokens = AZDe.getCollateralTokens();
         weth = ERC20Mock(collateralTokens[0]);
         wbtc = ERC20Mock(collateralTokens[1]);
 
-        ethUsdPriceFeed = MockV3Aggregator(dsce.getPriceFeed(address(weth)));
+        ethUsdPriceFeed = MockV3Aggregator(AZDe.getPriceFeed(address(weth)));
     }
 
-    function mintDsc(uint256 amount, uint256 addressSeed) public {
+    function mintAZD(uint256 amount, uint256 addressSeed) public {
         if (usersWithCollateralDeposited.length == 0) {
             return;
         }
         address sender = usersWithCollateralDeposited[addressSeed % usersWithCollateralDeposited.length]; //get a random user from the array, addressSeed is a random number provided by Foundry
-        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getAccountInformation(sender);
+        (uint256 totalAZDMinted, uint256 collateralValueInUsd) = AZDe.getAccountInformation(sender);
         int256 collateralAdjusted =
-            (int256(collateralValueInUsd) * int256(dsce.getLiquidationThreshold())) / int256(dsce.getPrecision()); //Apply liquidation threshold (80%) i.e. (collateralValueInUsd * 80 / 1e18)
-        int256 maxDscToMint = (collateralAdjusted - int256(totalDscMinted)); //divid
-        if (maxDscToMint < 0) {
+            (int256(collateralValueInUsd) * int256(AZDe.getLiquidationThreshold())) / int256(AZDe.getPrecision()); //Apply liquidation threshold (80%) i.e. (collateralValueInUsd * 80 / 1e18)
+        int256 maxAZDToMint = (collateralAdjusted - int256(totalAZDMinted)); //divid
+        if (maxAZDToMint < 0) {
             return;
         }
-        amount = bound(amount, 0, uint256(maxDscToMint));
+        amount = bound(amount, 0, uint256(maxAZDToMint));
         if (amount == 0) {
             return;
         }
         vm.startPrank(sender);
-        dsce.mintDsc(amount);
+        AZDe.mintAZD(amount);
         vm.stopPrank();
         timesMintIsCalled++;
     }
@@ -59,11 +59,11 @@ contract Handler is StdInvariant, Test {
     //this has cut revert amount down to zer0
     //invariant_protocolMustHaveMoreValueThanTotalSupply() (runs: 200, calls: 40000, reverts: 0)
     /**
-     * @notice Deposits collateral into the DSCEngine contract on behalf of the caller.
+     * @notice Deposits collateral into the AZDEngine contract on behalf of the caller.
      * @dev Parameters are fuzzed to test various scenarios.
      * @param collateralSeed A seed to determine which collateral type to deposit (e.g., WETH or WBTC).
      * @param amountCollateral The amount of collateral to deposit, bounded to a maximum size.
-     * This is similar to depositCollateral function in DSCEngine.sol but with fuzzed params and we want this to always succeed
+     * This is similar to depositCollateral function in AZDEngine.sol but with fuzzed params and we want this to always succeed
      */
     function depositCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
@@ -72,8 +72,8 @@ contract Handler is StdInvariant, Test {
 
         vm.startPrank(USER);
         collateral.mint(USER, amountCollateral);
-        collateral.approve(address(dsce), amountCollateral);
-        dsce.depositCollateral(address(collateral), amountCollateral); //calls with valid address so it won't revert
+        collateral.approve(address(AZDe), amountCollateral);
+        AZDe.depositCollateral(address(collateral), amountCollateral); //calls with valid address so it won't revert
 
         //double push
         usersWithCollateralDeposited.push(USER);
@@ -83,7 +83,7 @@ contract Handler is StdInvariant, Test {
     function redeemCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
         // getCollateralDeposited reads the user’s current balance using the *EOA* (msg.sender in Handler context)
-        uint256 maxCollateralToRedeem = dsce.getCollateralDeposited(msg.sender, address(collateral));
+        uint256 maxCollateralToRedeem = AZDe.getCollateralDeposited(msg.sender, address(collateral));
         //they should only be redeeming as much as they put in the system
         amountCollateral = bound(amountCollateral, 0, maxCollateralToRedeem); //force the input values within a specific valid range
         if (amountCollateral == 0) {
@@ -91,7 +91,7 @@ contract Handler is StdInvariant, Test {
         }
         // Make the call as that same user
         vm.prank(msg.sender);
-        dsce.redeemCollateral(address(collateral), amountCollateral);
+        AZDe.redeemCollateral(address(collateral), amountCollateral);
         vm.stopPrank();
     }
 

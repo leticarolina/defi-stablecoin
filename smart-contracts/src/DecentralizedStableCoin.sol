@@ -5,14 +5,14 @@ import {ERC20Burnable, ERC20} from "@openzeppelin/contracts/token/ERC20/extensio
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /*
- * @title: DecentralizedStableCoin
+ * @title: Azevedo Dollar
  * @author: Leticia Azevedo
- * Collateral: Exogenous (ETH & BTC)
+ * Collateral: Exogenous (wETH & wBTC)
  * Minting: Algorithmic
  * Relative Stability: Pegged to USD
  *
- * This is the contract meant to be governed by DSCEngine.
- * This contract is just the ERC20 implementation of our stablecoin system.
+ * This is the contract meant to be governed by AZDEngine.
+ * This contract is just the ERC20 implementation of my stablecoin system.
  */
 contract DecentralizedStableCoin is ERC20Burnable, Ownable {
     error DecentralizedStableCoin__ZeroAmount();
@@ -22,7 +22,9 @@ contract DecentralizedStableCoin is ERC20Burnable, Ownable {
     // address public i_owner;
 
     //Because we're inheriting ERC20Burnable, and it inherits ERC20, we need to satisfy the standard ERC20 constructor
-    constructor(address initialOwner) ERC20("LetiCarolDollar", "LCD") Ownable(initialOwner) {}
+    constructor(
+        address initialOwner
+    ) ERC20("Azevedo Dollar", "AZD") Ownable(initialOwner) {}
 
     function burn(uint256 _amount) public override onlyOwner {
         uint256 balance = balanceOf(msg.sender);
@@ -37,7 +39,10 @@ contract DecentralizedStableCoin is ERC20Burnable, Ownable {
         super.burn(_amount);
     }
 
-    function mint(address _to, uint256 _amount) external onlyOwner returns (bool) {
+    function mint(
+        address _to,
+        uint256 _amount
+    ) external onlyOwner returns (bool) {
         if (_to == address(0)) {
             revert DecentralizedStableCoin__NotZeroAddress();
         }

@@ -11,8 +11,8 @@ import {AggregatorV3Interface} from
  * @title OracleLib
  * @author Leticia Azevedo
  * @notice This library is used to check the Chainlink Oracle for stale data.
- * If a price is stale, functions will revert, and render the DSCEngine unusable - this is by design.
- * We want the DSCEngine to freeze if prices become stale.
+ * If a price is stale, functions will revert, and render the AZDEngine unusable - this is by design.
+ * We want the AZDEngine to freeze if prices become stale.
  * Known issue:
  * So if the Chainlink network explodes or price sinks quick and user have a lot of money locked in the protocol... bad.
  */

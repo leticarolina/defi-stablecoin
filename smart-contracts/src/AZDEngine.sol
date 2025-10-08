@@ -2,45 +2,44 @@
 pragma solidity ^0.8.19;
 
 /**
- * @title Decentralized Stablecoin Engine (DSCEngine)
+ * @title Decentralized Stablecoin Engine (AZDEngine)
  * @author Leticia Azevedo
- * @notice Users can deposit collateral and mint LCD (LetiCarolinaDollar).
- * at no point should the value of the all collateral be less than backed value of LCD
+ * @notice Users can deposit collateral and mint AZD (LetiCarolinaDollar).
+ * at no point should the value of the all collateral be less than backed value of AZD
  * @dev Maintains over-collateralization, liquidation if HF < 1.
  * @dev liquidate function users can call in case their collateral goes way too down
  */
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {AggregatorV3Interface} from
-    "../lib/chainlink-evm/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol"; //interface for Chainlink Price Feeds, takes the address of the price feed as input
+import {AggregatorV3Interface} from "../lib/chainlink-evm/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol"; //interface for Chainlink Price Feeds, takes the address of the price feed as input
 import {OracleLib} from "./libraries/OracleLib.sol";
 
-contract DSCEngine is ReentrancyGuard {
+contract AZDEngine is ReentrancyGuard {
     using OracleLib for AggregatorV3Interface;
 
     ////////////////////////////////////////////////
     ///////////////----CUSTOM ERRORS------//////////
     ////////////////////////////////////////////////
-    error DSCEngine__AmountShouldBeMoreThanZero();
-    error DSCEngine__TokenAddressAndPriceFeedMustBeTheSameLength();
-    error DSCEngine__NotAllowedTokenAddress();
-    error DSCEngine__TransferFailed();
-    error DSCEngine__BreaksHealthFactor(uint256 healthfactor);
-    error DSCEngine__MintFailed();
-    error DSCEngine__HealthFactorIsGood(uint256 healthfactor);
-    error DSCEngine__HealthFactorNotImproved();
-    error DSCEngine__RedeemExceedsBalance();
-    error DSCEngine__NotEnoughDSC();
+    error AZDEngine__AmountShouldBeMoreThanZero();
+    error AZDEngine__TokenAddressAndPriceFeedMustBeTheSameLength();
+    error AZDEngine__NotAllowedTokenAddress();
+    error AZDEngine__TransferFailed();
+    error AZDEngine__BreaksHealthFactor(uint256 healthfactor);
+    error AZDEngine__MintFailed();
+    error AZDEngine__HealthFactorIsGood(uint256 healthfactor);
+    error AZDEngine__HealthFactorNotImproved();
+    error AZDEngine__RedeemExceedsBalance();
+    error AZDEngine__NotEnoughAZD();
 
     ////////////////////////////////////////////////
     ///////////////---STATE VARIABLES------/////////
     ////////////////////////////////////////////////
-    DecentralizedStableCoin private immutable i_lcdAddress; //token contract instance, reference to DecentralizedStableCoin (so the engine can mint/ burn)
+    DecentralizedStableCoin private immutable i_AZDAddress; //token contract instance, reference to DecentralizedStableCoin (so the engine can mint/ burn)
     mapping(address token => address priceFeed) private s_priceFeeds; //TokenToPriceFeed, maps each collateral token to its Chainlink price feed.
     mapping(address user => mapping(address token => uint256 amount)) //how much of each token a user deposited
         private s_collateralDeposited; //user address TO A mapping of token Address > amount minted from that token address
-    mapping(address user => uint256 amountDSCMinted) s_DSCMinted; //How much each user has borrowed (minted)
+    mapping(address user => uint256 amountAZDMinted) s_AZDMinted; //How much each user has borrowed (minted)
     address[] private s_ArrayCollateralTokens; //array to store the chainlink PriceFeed address of collaterals
     uint256 private constant ADDITIONAL_FEED_PRICE_PRECISION = 1e10; //because chainlink price feed is already 8 decimals, turns into 18
     uint256 private constant PRECISION = 1e18;
@@ -52,26 +51,37 @@ contract DSCEngine is ReentrancyGuard {
     ////////////////////////////////////////////////
     ///////////////---EVENTS------//////////////////
     ////////////////////////////////////////////////
-    event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
-    event CollateralRedeemed(
-        address indexed redeemedFrom, address indexed redeemedTo, address indexed token, uint256 amount
+    event CollateralDeposited(
+        address indexed user,
+        address indexed token,
+        uint256 indexed amount
     );
-    event DSCMinted(address indexed user, uint256 indexed amountDSCMinted);
-    event DSCBurned(uint256 indexed amountDSCToBurn, address indexed dscFrom, address indexed onBehalfOf);
+    event CollateralRedeemed(
+        address indexed redeemedFrom,
+        address indexed redeemedTo,
+        address indexed token,
+        uint256 amount
+    );
+    event AZDMinted(address indexed user, uint256 indexed amountAZDMinted);
+    event AZDBurned(
+        uint256 indexed amountAZDToBurn,
+        address indexed AZDFrom,
+        address indexed onBehalfOf
+    );
 
     ////////////////////////////////////////////////
     ///////////////----MODIFIERS------//////////////
     ////////////////////////////////////////////////
     modifier moreThanZero(uint256 amount) {
         if (amount == 0) {
-            revert DSCEngine__AmountShouldBeMoreThanZero();
+            revert AZDEngine__AmountShouldBeMoreThanZero();
         }
         _;
     }
 
     modifier isAllowedToken(address token) {
         if (s_priceFeeds[token] == address(0)) {
-            revert DSCEngine__NotAllowedTokenAddress();
+            revert AZDEngine__NotAllowedTokenAddress();
             //If there’s no Pricefeed configured, that token isn’t allowed as collateral.
         }
         _;
@@ -84,68 +94,81 @@ contract DSCEngine is ReentrancyGuard {
         // inputs passed during deployment to help set up storage variables
         address[] memory tokenAddresses, //WETH, WBTC
         address[] memory priceFeedAddresses, //Chainlink
-        address lcdAdress //DecentralizedStableCoin.sol
+        address AZDAdress //DecentralizedStableCoin.sol
     ) {
         //checks if both arrays have the same length.
         if (tokenAddresses.length != priceFeedAddresses.length) {
-            revert DSCEngine__TokenAddressAndPriceFeedMustBeTheSameLength();
+            revert AZDEngine__TokenAddressAndPriceFeedMustBeTheSameLength();
         }
         for (uint256 i = 0; i < tokenAddresses.length; i++) {
             address token = tokenAddresses[i];
             address feed = priceFeedAddresses[i];
             if (token == address(0) || feed == address(0)) {
-                revert DSCEngine__NotAllowedTokenAddress();
+                revert AZDEngine__NotAllowedTokenAddress();
             }
             //For each token → feed pair, store it in the s_priceFeeds mapping.
             s_priceFeeds[token] = feed;
             //also push the token address to the s_ArrayCollateralTokens array
             s_ArrayCollateralTokens.push(tokenAddresses[i]);
         }
-        i_lcdAddress = DecentralizedStableCoin(lcdAdress); //saving a reference to the already-deployed DecentralizedStableCoin contract
+        i_AZDAddress = DecentralizedStableCoin(AZDAdress); //saving a reference to the already-deployed DecentralizedStableCoin contract
     }
 
     ////////////////////////////////////////////////
     ////////--EXTERNAL/PUBLIC FUNCTIONS---//////////
     ////////////////////////////////////////////////
     /**
-     * @notice This function is the combination of depositCollateral + mintDsc functions so user doesn't have to call each separately
-     * @notice it will deposit the Collateral and mint the DSC in one transaction
+     * @notice This function is the combination of depositCollateral + mintAZD functions so user doesn't have to call each separately
+     * @notice it will deposit the Collateral and mint the AZD in one transaction
      * @param tokenCollateralAddress The address of the token to deposit as collateral
      * @param amountCollateral The amount of collateral to deposit
-     * @param amountDSCToMint The amount of DSC to mint
+     * @param amountAZDToMint The amount of AZD to mint
      */
-    function depositCollateralAndMintDsc(
+    function depositCollateralAndMintAZD(
         address tokenCollateralAddress,
         uint256 amountCollateral,
-        uint256 amountDSCToMint
+        uint256 amountAZDToMint
     ) external {
         depositCollateral(tokenCollateralAddress, amountCollateral);
-        mintDsc(amountDSCToMint);
+        mintAZD(amountAZDToMint);
     }
 
     /**
-     * @notice This is how users acquire the stablecoin, they deposit collateral greater than the value of the DSC minted
+     * @notice This is how users acquire the stablecoin, they deposit collateral greater than the value of the AZD minted
      * @notice follows CEI Pattern
      * @param tokenCollateralAddress The address of the token to deposit as collateral
      * @param amountCollateral The amount of collateral to deposit
      */
-    function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+    function depositCollateral(
+        address tokenCollateralAddress,
+        uint256 amountCollateral
+    )
         public
         moreThanZero(amountCollateral)
         isAllowedToken(tokenCollateralAddress)
         nonReentrant
     {
         //effect
-        s_collateralDeposited[msg.sender][tokenCollateralAddress] += amountCollateral; //setting the amount deposited on the s_collateralDeposited mapping
-        emit CollateralDeposited(msg.sender, tokenCollateralAddress, amountCollateral);
+        s_collateralDeposited[msg.sender][
+            tokenCollateralAddress
+        ] += amountCollateral; //setting the amount deposited on the s_collateralDeposited mapping
+        emit CollateralDeposited(
+            msg.sender,
+            tokenCollateralAddress,
+            amountCollateral
+        );
         //interactions
-        //why the IERC20? This requires the user to call approve(DSCEngine, amount) on the token first (outside contract).
+        //why the IERC20? This requires the user to call approve(AZDEngine, amount) on the token first (outside contract).
         //User flow is Approve → depositCollateral
         // function .transferFrom(address from, address to, uint256 value) external returns (bool);
         //moves tokens from the user to my contract
-        bool success = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateral);
+        bool success = IERC20(tokenCollateralAddress).transferFrom(
+            msg.sender,
+            address(this),
+            amountCollateral
+        );
         if (!success) {
-            revert DSCEngine__TransferFailed();
+            revert AZDEngine__TransferFailed();
         }
         _revertIfHealthFactorIsBroken(msg.sender);
     }
@@ -153,103 +176,118 @@ contract DSCEngine is ReentrancyGuard {
     /**
      * @notice Mints the stablecoin
      * @notice they must have more collateral than the minimum threshold, follows CEI Pattern.
-     * @param amountDSCToMint The amount of DSC tokens users want to get (mint)
+     * @param amountAZDToMint The amount of AZD tokens users want to get (mint)
      */
-    function mintDsc(uint256 amountDSCToMint) public moreThanZero(amountDSCToMint) nonReentrant {
-        s_DSCMinted[msg.sender] += amountDSCToMint; //s_DSCMinted[user]: the user’s 'debt'
-        _revertIfHealthFactorIsBroken(msg.sender); //if they try mint too much eg. 100$ETH > 150$LCD revert, ensure their collateral is healthy after minting.
-        emit DSCMinted(msg.sender, amountDSCToMint);
-        bool minted = i_lcdAddress.mint(msg.sender, amountDSCToMint);
+    function mintAZD(
+        uint256 amountAZDToMint
+    ) public moreThanZero(amountAZDToMint) nonReentrant {
+        s_AZDMinted[msg.sender] += amountAZDToMint; //s_AZDMinted[user]: the user’s 'debt'
+        _revertIfHealthFactorIsBroken(msg.sender); //if they try mint too much eg. 100$ETH > 150$AZD revert, ensure their collateral is healthy after minting.
+        emit AZDMinted(msg.sender, amountAZDToMint);
+        bool minted = i_AZDAddress.mint(msg.sender, amountAZDToMint);
         if (!minted) {
-            revert DSCEngine__MintFailed();
+            revert AZDEngine__MintFailed();
         }
     }
 
     /**
-     * @notice This function combines burns DSC and then redeem users collateral in one transaction
-     * @param amountDSCToBurn The amount of DSC to burn
+     * @notice This function combines burns AZD and then redeem users collateral in one transaction
+     * @param amountAZDToBurn The amount of AZD to burn
      */
-    function burnDscAndRedeemCollateral(
+    function burnAZDAndRedeemCollateral(
         address tokenCollateralAddress,
         uint256 amountCollateral,
-        uint256 amountDSCToBurn
+        uint256 amountAZDToBurn
     ) external {
-        burnDsc(amountDSCToBurn);
+        burnAZD(amountAZDToBurn);
         redeemCollateral(tokenCollateralAddress, amountCollateral); //already check health factor
     }
 
     /**
-     * @notice This function allows users to return DSC to the protocol in exchange for their underlying collateral
+     * @notice This function allows users to return AZD to the protocol in exchange for their underlying collateral
      * @notice In order for them to redeem Collateral, the health factor must be greater than 1 after collateral is pulled
      */
-    function redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral)
-        public
-        moreThanZero(amountCollateral)
-        nonReentrant
-    {
-        _redeemCollateral(tokenCollateralAddress, amountCollateral, msg.sender, msg.sender);
+    function redeemCollateral(
+        address tokenCollateralAddress,
+        uint256 amountCollateral
+    ) public moreThanZero(amountCollateral) nonReentrant {
+        _redeemCollateral(
+            tokenCollateralAddress,
+            amountCollateral,
+            msg.sender,
+            msg.sender
+        );
     }
 
     /**
-     * @notice If the value of a user's collateral quickly falls, users will need a way to quickly rectify the collateralization of their LCD.
+     * @notice If the value of a user's collateral quickly falls, users will need a way to quickly rectify the collateralization of their AZD.
      */
-    function burnDsc(uint256 amount) public moreThanZero(amount) nonReentrant {
-        _burnDSC(amount, msg.sender, msg.sender);
+    function burnAZD(uint256 amount) public moreThanZero(amount) nonReentrant {
+        _burnAZD(amount, msg.sender, msg.sender);
         // _revertIfHealthFactorIsBroken(msg.sender); //backup bcs burning won't really drop health factor
     }
 
     /**
-     * @notice Users can repay someone else’s debt (DSC) on their behalf if undercollateralized, and get rewarded with some of their collateral + 10% LIQUIDATION_BONUS
+     * @notice Users can repay someone else’s debt (AZD) on their behalf if undercollateralized, and get rewarded with some of their collateral + 10% LIQUIDATION_BONUS
      * @notice This function working assumes that the protocol will be roughly 125% overcollateralized in order for this to work.
      * @notice A bug would be if the protocol was only 100% collateralized, we wouldn't be able incentive liquidators or to liquidate anyone.
      * Example: if the price of the collateral plummeted before anyone could be liquidated.
      * @param collateral: The ERC20 token address of the collateral you're using to make the protocol solvent again.
      * @param user: The user to liquidate, who is insolvent. Must have a _healthFactor below MIN_HEALTH_FACTOR 1
-     * @param debtToCover: The amount of DSC you want to repay/burn to cover the user debt.
+     * @param debtToCover: The amount of AZD you want to repay/burn to cover the user debt.
      */
-    function liquidate(address collateral, address user, uint256 debtToCover)
-        external
-        moreThanZero(debtToCover)
-        nonReentrant
-    {
+    function liquidate(
+        address collateral,
+        address user,
+        uint256 debtToCover
+    ) external moreThanZero(debtToCover) nonReentrant {
         //Checks user health factor
         uint256 startingUserHealthFactor = _healthFactor(user);
         if (startingUserHealthFactor >= MINIMUM_HEALTH_FACTOR) {
-            revert DSCEngine__HealthFactorIsGood(startingUserHealthFactor);
+            revert AZDEngine__HealthFactorIsGood(startingUserHealthFactor);
         }
-        if (i_lcdAddress.balanceOf(msg.sender) < debtToCover) {
-            revert DSCEngine__NotEnoughDSC();
+        if (i_AZDAddress.balanceOf(msg.sender) < debtToCover) {
+            revert AZDEngine__NotEnoughAZD();
         }
 
-        //eg 100dsc debtToCover, 100dsc == HOW MUCH ETH?
-        // Given a DSC amount (debtToCover), how much of this collateral token should I take (ETH, BTC, etc.) in return?
-        uint256 tokenAmountFromDebtCovered = getTokenAmountFromDSC(collateral, debtToCover);
+        //eg 100AZD debtToCover, 100AZD == HOW MUCH ETH?
+        // Given a AZD amount (debtToCover), how much of this collateral token should I take (ETH, BTC, etc.) in return?
+        uint256 tokenAmountFromDebtCovered = getTokenAmountFromAZD(
+            collateral,
+            debtToCover
+        );
 
         // 10% bonus: liquidator redeems debt value in collateral + 10%
-        uint256 bonusCollateral = (tokenAmountFromDebtCovered * BONUS_LIQUIDATION) / LIQUIDATION_PRECISION;
+        uint256 bonusCollateral = (tokenAmountFromDebtCovered *
+            BONUS_LIQUIDATION) / LIQUIDATION_PRECISION;
 
-        uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered + bonusCollateral;
+        uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered +
+            bonusCollateral;
 
-        //The liquidator burns debtToCover DSC on behalf of the insolvent user to reduce their debt and improve HF
-        _burnDSC(debtToCover, msg.sender, user);
+        //The liquidator burns debtToCover AZD on behalf of the insolvent user to reduce their debt and improve HF
+        _burnAZD(debtToCover, msg.sender, user);
         //Take totalCollateralToRedeem worth of their ETH/BTC out of the protocol and send it to the liquidator
         //this makes user HF even worse temporarily
-        _redeemCollateral(collateral, totalCollateralToRedeem, user, msg.sender);
+        _redeemCollateral(
+            collateral,
+            totalCollateralToRedeem,
+            user,
+            msg.sender
+        );
 
         //make sure that the liquidation actually helped, if their HF didn’t improve → revert
         uint256 endingUserHealthFactor = _healthFactor(user);
         if (endingUserHealthFactor <= startingUserHealthFactor) {
-            revert DSCEngine__HealthFactorNotImproved();
+            revert AZDEngine__HealthFactorNotImproved();
         }
         _revertIfHealthFactorIsBroken(msg.sender);
     }
 
-    function calculateHealthFactor(uint256 totalDscMinted, uint256 collateralValueInUsd)
-        external
-        pure
-        returns (uint256)
-    {
-        return _calculateHealthFactor(totalDscMinted, collateralValueInUsd);
+    function calculateHealthFactor(
+        uint256 totalAZDMinted,
+        uint256 collateralValueInUsd
+    ) external pure returns (uint256) {
+        return _calculateHealthFactor(totalAZDMinted, collateralValueInUsd);
     }
 
     ////////////////////////////////////////////////
@@ -265,39 +303,60 @@ contract DSCEngine is ReentrancyGuard {
      * @param from The address where the collateral is being taken from
      * @param to The address where the collateral is being sent to, Can be: The user (normal redeem) or A liquidator (forced liquidation)
      */
-    function _redeemCollateral(address tokenCollateralAddress, uint256 amountCollateral, address from, address to)
-        private
-    {
+    function _redeemCollateral(
+        address tokenCollateralAddress,
+        uint256 amountCollateral,
+        address from,
+        address to
+    ) private {
         uint256 balance = s_collateralDeposited[from][tokenCollateralAddress];
         if (amountCollateral > balance) {
-            revert DSCEngine__RedeemExceedsBalance();
+            revert AZDEngine__RedeemExceedsBalance();
         }
-        s_collateralDeposited[from][tokenCollateralAddress] = balance - amountCollateral;
-        emit CollateralRedeemed(from, to, tokenCollateralAddress, amountCollateral);
+        s_collateralDeposited[from][tokenCollateralAddress] =
+            balance -
+            amountCollateral;
+        emit CollateralRedeemed(
+            from,
+            to,
+            tokenCollateralAddress,
+            amountCollateral
+        );
         //sending tokens back from the contract to the user (or a liquidator)
-        bool success = IERC20(tokenCollateralAddress).transfer(to, amountCollateral);
+        bool success = IERC20(tokenCollateralAddress).transfer(
+            to,
+            amountCollateral
+        );
         if (!success) {
-            revert DSCEngine__TransferFailed(); //unreachable bcs engine validates collateral tokens up front
+            revert AZDEngine__TransferFailed(); //unreachable bcs engine validates collateral tokens up front
         }
         _revertIfHealthFactorIsBroken(from);
     }
 
     /**
-     * @notice Burns DSC to reduce the users debt.
-     * @param amountDSCToBurn The amount of DSC user wants to burn
+     * @notice Burns AZD to reduce the users debt.
+     * @param amountAZDToBurn The amount of AZD user wants to burn
      * @param onBehalfOf The address of the user being helped, paying down their debt
-     * @param dscFrom The address where the DSC is being taken from to pay down the debt
+     * @param AZDFrom The address where the AZD is being taken from to pay down the debt
      * @dev low level func, not to call unless the function calling it is checking health factor
      */
-    function _burnDSC(uint256 amountDSCToBurn, address dscFrom, address onBehalfOf) private {
-        s_DSCMinted[onBehalfOf] -= amountDSCToBurn;
-        //first we take the DSC amount from user, bring to our contract and then we burn after
-        bool success = i_lcdAddress.transferFrom(dscFrom, address(this), amountDSCToBurn);
-        emit DSCBurned(amountDSCToBurn, dscFrom, onBehalfOf);
+    function _burnAZD(
+        uint256 amountAZDToBurn,
+        address AZDFrom,
+        address onBehalfOf
+    ) private {
+        s_AZDMinted[onBehalfOf] -= amountAZDToBurn;
+        //first we take the AZD amount from user, bring to our contract and then we burn after
+        bool success = i_AZDAddress.transferFrom(
+            AZDFrom,
+            address(this),
+            amountAZDToBurn
+        );
+        emit AZDBurned(amountAZDToBurn, AZDFrom, onBehalfOf);
         if (!success) {
-            revert DSCEngine__TransferFailed(); //unreachble
+            revert AZDEngine__TransferFailed(); //unreachble
         }
-        i_lcdAddress.burn(amountDSCToBurn);
+        i_AZDAddress.burn(amountAZDToBurn);
     }
 
     /**
@@ -305,28 +364,35 @@ contract DSCEngine is ReentrancyGuard {
      * @param user The address of the user being checked
      */
     function _healthFactor(address user) private view returns (uint256) {
-        //get their total LCD minted and total collateral value to compare, value > total DSC minted
-        (uint256 totalDSCAmountMinted, uint256 totalCollateralValueInUSD) = _getAcccountInformation(user);
-        return _calculateHealthFactor(totalDSCAmountMinted, totalCollateralValueInUSD);
+        //get their total AZD minted and total collateral value to compare, value > total AZD minted
+        (
+            uint256 totalAZDAmountMinted,
+            uint256 totalCollateralValueInUSD
+        ) = _getAcccountInformation(user);
+        return
+            _calculateHealthFactor(
+                totalAZDAmountMinted,
+                totalCollateralValueInUSD
+            );
     }
 
     /**
      * @notice The real calculation comparison the get users health factor
      * @notice Returns the health factor in 18 decimals
-     * @param totalDscMinted The users total debt in DSC 18 decimals
+     * @param totalAZDMinted The users total debt in AZD 18 decimals
      * @param collateralValueInUsd The total collateral value user has in USD
      */
-    function _calculateHealthFactor(uint256 totalDscMinted, uint256 collateralValueInUsd)
-        internal
-        pure
-        returns (uint256)
-    {
-        if (totalDscMinted == 0) return type(uint256).max; //returns a good healthFactor so brand-new users aren’t “liquidatable”
+    function _calculateHealthFactor(
+        uint256 totalAZDMinted,
+        uint256 collateralValueInUsd
+    ) internal pure returns (uint256) {
+        if (totalAZDMinted == 0) return type(uint256).max; //returns a good healthFactor so brand-new users aren’t “liquidatable”
         //If collateralValueInUsd is $200, collateralAdjustedForThreshold = 200 * 80 / 100 = 160$
-        uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
+        uint256 collateralAdjustedForThreshold = (collateralValueInUsd *
+            LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
         return
-        //healthFactor = (160 * 1e18) / debt in Wei
-        (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
+            //healthFactor = (160 * 1e18) / debt in Wei
+            (collateralAdjustedForThreshold * PRECISION) / totalAZDMinted;
     }
 
     /**
@@ -337,7 +403,7 @@ contract DSCEngine is ReentrancyGuard {
     function _revertIfHealthFactorIsBroken(address user) internal view {
         uint256 useHealthFactor = _healthFactor(user);
         if (useHealthFactor < MINIMUM_HEALTH_FACTOR) {
-            revert DSCEngine__BreaksHealthFactor(useHealthFactor);
+            revert AZDEngine__BreaksHealthFactor(useHealthFactor);
         }
     }
 
@@ -348,12 +414,17 @@ contract DSCEngine is ReentrancyGuard {
     /**
      * @notice Gets the total amount of StableCoin minted and the total amount in USD deposited
      */
-    function _getAcccountInformation(address user)
+    function _getAcccountInformation(
+        address user
+    )
         private
         view
-        returns (uint256 totalDSCAmountMinted, uint256 totalCollateralValueInUSD)
+        returns (
+            uint256 totalAZDAmountMinted,
+            uint256 totalCollateralValueInUSD
+        )
     {
-        totalDSCAmountMinted = s_DSCMinted[user];
+        totalAZDAmountMinted = s_AZDMinted[user];
         totalCollateralValueInUSD = getAccountCollateralValue(user);
     }
 
@@ -363,7 +434,9 @@ contract DSCEngine is ReentrancyGuard {
      * take those amount getUSDValue() for each token.
      * @param totalCollateralValueInUSD The total amount user have deposited in current USD price
      */
-    function getAccountCollateralValue(address user) public view returns (uint256 totalCollateralValueInUSD) {
+    function getAccountCollateralValue(
+        address user
+    ) public view returns (uint256 totalCollateralValueInUSD) {
         //loop thru each collateral token, get the amount they have deposited on each token
         //map it to the price, to get the total usd value
         for (uint256 i = 0; i < s_ArrayCollateralTokens.length; i++) {
@@ -388,45 +461,64 @@ contract DSCEngine is ReentrancyGuard {
      * @param token The token address of the collateral being checked (eth or btc)
      * @param amount The amount of the token in ETH or BTC value (eg 1e18ETH)
      */
-    function getUSDValue(address token, uint256 amount) public view returns (uint256) {
+    function getUSDValue(
+        address token,
+        uint256 amount
+    ) public view returns (uint256) {
         // AggregatorV3Interface(<address>) is casting the address to the interface type so can call latestRoundData, getRoundData on that specific deployed feed
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(
+            s_priceFeeds[token]
+        );
+        (, int256 price, , , ) = priceFeed.staleCheckLatestRoundData();
         //(e8 * e10) * e18 = 36 decimals / e18 division brings it down to 18
-        return ((uint256(price) * ADDITIONAL_FEED_PRICE_PRECISION) * amount) / PRECISION;
+        return
+            ((uint256(price) * ADDITIONAL_FEED_PRICE_PRECISION) * amount) /
+            PRECISION;
     }
 
     /**
      * @notice Pricing helper to get TOKEN amount of a collateral deposited.
-     * @notice Takes X DSC dollars and returns how much ETH is needed to match that value at current price
+     * @notice Takes X AZD dollars and returns how much ETH is needed to match that value at current price
      * @param token The token address of the collateral being checked (eth or btc)
-     * @param dscAmountInWei The amount of dollars in wei (eg. 50e18 50$)
+     * @param AZDAmountInWei The amount of dollars in wei (eg. 50e18 50$)
      */
-    function getTokenAmountFromDSC(address token, uint256 dscAmountInWei) public view returns (uint256) {
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
-        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
-        //(50e18 * 1e18) / (e8 * e10) = e36 dsc amount / e18 current usd price of collateral
-        return (dscAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRICE_PRECISION);
+    function getTokenAmountFromAZD(
+        address token,
+        uint256 AZDAmountInWei
+    ) public view returns (uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(
+            s_priceFeeds[token]
+        );
+        (, int256 price, , , ) = priceFeed.staleCheckLatestRoundData();
+        //(50e18 * 1e18) / (e8 * e10) = e36 AZD amount / e18 current usd price of collateral
+        return
+            (AZDAmountInWei * PRECISION) /
+            (uint256(price) * ADDITIONAL_FEED_PRICE_PRECISION);
     }
 
-    function getAccountInformation(address user)
+    function getAccountInformation(
+        address user
+    )
         external
         view
-        returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
+        returns (uint256 totalAZDMinted, uint256 collateralValueInUsd)
     {
-        (totalDscMinted, collateralValueInUsd) = _getAcccountInformation(user);
+        (totalAZDMinted, collateralValueInUsd) = _getAcccountInformation(user);
     }
 
     function getPriceFeed(address token) external view returns (address) {
         return s_priceFeeds[token];
     }
 
-    function getCollateralDeposited(address user, address token) external view returns (uint256) {
+    function getCollateralDeposited(
+        address user,
+        address token
+    ) external view returns (uint256) {
         return s_collateralDeposited[user][token];
     }
 
-    function getDSCMinted(address user) external view returns (uint256) {
-        return s_DSCMinted[user];
+    function getAZDMinted(address user) external view returns (uint256) {
+        return s_AZDMinted[user];
     }
 
     function getCollateralTokens() external view returns (address[] memory) {
