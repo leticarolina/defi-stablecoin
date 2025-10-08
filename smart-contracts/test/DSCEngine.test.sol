@@ -8,7 +8,8 @@ import {DSCEngine} from "../src/DSCEngine.sol";
 import {DecentralizedStableCoin} from "../src/DecentralizedStableCoin.sol";
 import {Test, console} from "forge-std/Test.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/token/ERC20Mock.sol";
-import {AggregatorV3Interface} from "../lib/chainlink-evm/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
+import {AggregatorV3Interface} from
+    "../lib/chainlink-evm/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import {MockV3Aggregator} from "./mocks/MockV3Aggregator.sol";
 import {DSCFailMock} from "./mocks/DSCFailMock.sol";
 import {ERC20FailMock} from "./mocks/ERC20FailMock.sol";
@@ -37,8 +38,7 @@ contract DSCEngineTest is Test {
     function setUp() public {
         deployer = new DeployDSC();
         (dsc, dsce, config) = deployer.run();
-        (ethUsdPriceFeed, btcUsdPriceFeed, weth, wbtc, ) = config
-            .activeNetworkConfig(); //returning the mock price feeds hardcoded in HelperConfig
+        (ethUsdPriceFeed, btcUsdPriceFeed, weth, wbtc,) = config.activeNetworkConfig(); //returning the mock price feeds hardcoded in HelperConfig
         ERC20Mock(weth).mint(USER, INITIAL_BALANCE); //gives/mint some WETH tokens into USER balance son can deposit them in tests
         ERC20Mock(weth).mint(LIQUIDATOR, INITIAL_BALANCE); //Pretend the wallet already has ETH
     }
@@ -65,19 +65,13 @@ contract DSCEngineTest is Test {
     ////////////////////////////////////////////////
     //test_<unitUnderTest>_<stateOrCondition>_<expectedOutcome/Behaviour>
 
-    function test_constructor_reverts_ifTokenLengthDoesntMatchPriceFeeds()
-        public
-    {
+    function test_constructor_reverts_ifTokenLengthDoesntMatchPriceFeeds() public {
         tokenAddresses.push(weth); // purposely make the arrays unequal length
         priceFeedAddresses.push(ethUsdPriceFeed);
         priceFeedAddresses.push(btcUsdPriceFeed);
-        vm.expectRevert(
-            DSCEngine
-                .DSCEngine__TokenAddressAndPriceFeedMustBeTheSameLength
-                .selector
-        );
+        vm.expectRevert(DSCEngine.DSCEngine__TokenAddressAndPriceFeedMustBeTheSameLength.selector);
         new DSCEngine(tokenAddresses, priceFeedAddresses, address(dsc)); //try to deploy
-        //Without this test, someone can accidentally deploy DSCEngine with mismatched arrays, and mappings would break.
+            //Without this test, someone can accidentally deploy DSCEngine with mismatched arrays, and mappings would break.
     }
 
     function test_constructor_revert_ifTokenOrPriceFeedAddressIsZero() public {
@@ -107,10 +101,7 @@ contract DSCEngineTest is Test {
         //270k / btcPrice 90k = 3BTC
         uint256 dscAmount = 270000e18; //minted
         uint256 expectedBtcCollateral = 3e18; //my collateral value given the current usd
-        uint256 collateralAmountResult = dsce.getTokenAmountFromDSC(
-            wbtc,
-            dscAmount
-        ); //90000000000000000000
+        uint256 collateralAmountResult = dsce.getTokenAmountFromDSC(wbtc, dscAmount); //90000000000000000000
         assertEq(expectedBtcCollateral, collateralAmountResult);
     }
 
@@ -120,60 +111,40 @@ contract DSCEngineTest is Test {
     function test_depositCollateral_reverts_IfCollateralIsZero() public {
         vm.startPrank(USER);
         ERC20Mock(weth).approve(address(dsce), AMOUNT_COLLATERAL_DEPOSITED);
-        vm.expectRevert(
-            DSCEngine.DSCEngine__AmountShouldBeMoreThanZero.selector
-        );
+        vm.expectRevert(DSCEngine.DSCEngine__AmountShouldBeMoreThanZero.selector);
         dsce.depositCollateral(weth, 0);
         vm.stopPrank();
     }
 
-    function test_depositCollateral_reverts_WhenDepositUnapprovedCollateral()
-        public
-    {
+    function test_depositCollateral_reverts_WhenDepositUnapprovedCollateral() public {
         address bnbCollateralUnapproved = 0xB8c77482e45F1F44dE1745F52C74426C631bDD52;
         // ERC20Mock randomToken = new ERC20Mock(); //can also just deploy new randon erc20
         vm.startPrank(USER);
         ERC20Mock(weth).approve(address(dsce), AMOUNT_COLLATERAL_DEPOSITED); //Since the revert happens before touching transfer logic, the approval line is irrelevant.
         vm.expectRevert(DSCEngine.DSCEngine__NotAllowedTokenAddress.selector);
-        dsce.depositCollateral(
-            bnbCollateralUnapproved,
-            AMOUNT_COLLATERAL_DEPOSITED
-        );
+        dsce.depositCollateral(bnbCollateralUnapproved, AMOUNT_COLLATERAL_DEPOSITED);
     }
 
     function test_depositCollateral_UpdatesStateAndEmitEvent() public {
         vm.startPrank(USER);
         ERC20Mock(weth).approve(address(dsce), AMOUNT_COLLATERAL_DEPOSITED);
         vm.expectEmit(true, true, true, true); //set expectation before the call depositCollateral
-        emit DSCEngine.CollateralDeposited(
-            USER,
-            weth,
-            AMOUNT_COLLATERAL_DEPOSITED
-        );
+        emit DSCEngine.CollateralDeposited(USER, weth, AMOUNT_COLLATERAL_DEPOSITED);
         dsce.depositCollateral(weth, AMOUNT_COLLATERAL_DEPOSITED);
         vm.stopPrank();
 
         // 1) mapping updated
-        assertEq(
-            dsce.getCollateralDeposited(USER, weth),
-            AMOUNT_COLLATERAL_DEPOSITED
-        );
+        assertEq(dsce.getCollateralDeposited(USER, weth), AMOUNT_COLLATERAL_DEPOSITED);
 
         // 2) engine holds tokens
         //weth in test is just an address (the deployed mock ERC20 contract) To call balanceOf() need an ERC20 interface at that address
-        assertEq(
-            ERC20Mock(weth).balanceOf(address(dsce)),
-            AMOUNT_COLLATERAL_DEPOSITED
-        );
+        assertEq(ERC20Mock(weth).balanceOf(address(dsce)), AMOUNT_COLLATERAL_DEPOSITED);
 
         // 3) user spent tokens
-        assertEq(
-            ERC20Mock(weth).balanceOf(USER),
-            INITIAL_BALANCE - AMOUNT_COLLATERAL_DEPOSITED
-        );
+        assertEq(ERC20Mock(weth).balanceOf(USER), INITIAL_BALANCE - AMOUNT_COLLATERAL_DEPOSITED);
 
         // 4) no debt minted yet
-        (uint256 minted, ) = dsce.getAccountInformation(USER);
+        (uint256 minted,) = dsce.getAccountInformation(USER);
         assertEq(minted, 0);
     }
 
@@ -184,11 +155,7 @@ contract DSCEngineTest is Test {
         tokenAddresses.push(address(badCollateral));
         priceFeedAddresses.push(ethUsdPriceFeed); // reuse existing price feed
 
-        DSCEngine dsceWithBadToken = new DSCEngine(
-            tokenAddresses,
-            priceFeedAddresses,
-            address(dsc)
-        ); // deploy new DSCEngine with the bad token, otherwise address won't be allowed
+        DSCEngine dsceWithBadToken = new DSCEngine(tokenAddresses, priceFeedAddresses, address(dsc)); // deploy new DSCEngine with the bad token, otherwise address won't be allowed
 
         // Give USER some "badCollateral"
         badCollateral.transfer(USER, 100e18);
@@ -207,33 +174,20 @@ contract DSCEngineTest is Test {
     ////////////////////////////////////////////////
 
     function test_mintDsc_revertsOnZero() public {
-        vm.expectRevert(
-            DSCEngine.DSCEngine__AmountShouldBeMoreThanZero.selector
-        );
+        vm.expectRevert(DSCEngine.DSCEngine__AmountShouldBeMoreThanZero.selector);
         dsce.mintDsc(0);
     }
 
-    function test_mintDsc_revertsIfHealthWouldBreak()
-        public
-        depositedCollateral
-    {
+    function test_mintDsc_revertsIfHealthWouldBreak() public depositedCollateral {
         //Setup: 10ETH AMOUNT_COLLATERAL_DEPOSITED deposited ($30,000k collateral), adjusted 80% => $24.000
         uint256 mintAmount = 25000e18;
         uint256 collateralUsd = dsce.getAccountCollateralValue(USER); //24000e18
         uint256 currentDebt = dsce.getDSCMinted(USER); // likely 0 here
         // HF the engine will compute after adding the new debt
-        uint256 expectedHF = dsce.calculateHealthFactor(
-            currentDebt + mintAmount,
-            collateralUsd
-        );
+        uint256 expectedHF = dsce.calculateHealthFactor(currentDebt + mintAmount, collateralUsd);
         vm.startPrank(USER);
         // Try to mint more than adjusted collateral -> revert
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DSCEngine.DSCEngine__BreaksHealthFactor.selector,
-                expectedHF
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(DSCEngine.DSCEngine__BreaksHealthFactor.selector, expectedHF));
         dsce.mintDsc(mintAmount);
         vm.stopPrank();
     }
@@ -248,7 +202,7 @@ contract DSCEngineTest is Test {
         dsce.mintDsc(MINTED_DSC_AMOUNT);
         vm.stopPrank();
 
-        (uint256 minted, ) = dsce.getAccountInformation(USER);
+        (uint256 minted,) = dsce.getAccountInformation(USER);
 
         // Assertions
         assertEq(minted, MINTED_DSC_AMOUNT);
@@ -262,18 +216,11 @@ contract DSCEngineTest is Test {
         tokenAddresses.push(weth); // normal WETH mock collateral
         priceFeedAddresses.push(ethUsdPriceFeed);
 
-        DSCEngine badEngine = new DSCEngine(
-            tokenAddresses,
-            priceFeedAddresses,
-            address(badDsc)
-        );
+        DSCEngine badEngine = new DSCEngine(tokenAddresses, priceFeedAddresses, address(badDsc));
 
         // USER deposits collateral
         vm.startPrank(USER);
-        ERC20Mock(weth).approve(
-            address(badEngine),
-            AMOUNT_COLLATERAL_DEPOSITED
-        );
+        ERC20Mock(weth).approve(address(badEngine), AMOUNT_COLLATERAL_DEPOSITED);
         badEngine.depositCollateral(weth, AMOUNT_COLLATERAL_DEPOSITED);
 
         // Act / Assert
@@ -288,43 +235,25 @@ contract DSCEngineTest is Test {
     function test_depositAndMint_comboWorks() public {
         vm.startPrank(USER);
         ERC20Mock(weth).approve(address(dsce), AMOUNT_COLLATERAL_DEPOSITED);
-        dsce.depositCollateralAndMintDsc(
-            weth,
-            AMOUNT_COLLATERAL_DEPOSITED,
-            MINTED_DSC_AMOUNT
-        );
+        dsce.depositCollateralAndMintDsc(weth, AMOUNT_COLLATERAL_DEPOSITED, MINTED_DSC_AMOUNT);
         vm.stopPrank();
 
-        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce
-            .getAccountInformation(USER);
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getAccountInformation(USER);
         assertEq(totalDscMinted, MINTED_DSC_AMOUNT);
         // 10ETH deposited * 3k ETH_USD_PRICE =
         assertEq(collateralValueInUsd, 30000e18);
         assertEq(dsc.balanceOf(USER), MINTED_DSC_AMOUNT);
     }
 
-    function test_burnDscAndRedeemCollateral_comboWorks()
-        public
-        depositedCollateral
-        mintsStableCoin
-    {
+    function test_burnDscAndRedeemCollateral_comboWorks() public depositedCollateral mintsStableCoin {
         // Setup: USER deposits 30k > 24k collateral and mints 20K DSC
 
         // Check initial state
-        (
-            uint256 totalDscMintedBefore,
-            uint256 collateralValueInUsdBefore
-        ) = dsce.getAccountInformation(USER);
+        (uint256 totalDscMintedBefore, uint256 collateralValueInUsdBefore) = dsce.getAccountInformation(USER);
 
         uint256 dscToBurn = 5000e18;
-        uint256 collateralToRedeem = dsce.getTokenAmountFromDSC(
-            weth,
-            dscToBurn
-        ); //return is in Token Amount
-        uint256 usdValueFromRedemption = dsce.getUSDValue(
-            weth,
-            collateralToRedeem
-        ); //returns in USD
+        uint256 collateralToRedeem = dsce.getTokenAmountFromDSC(weth, dscToBurn); //return is in Token Amount
+        uint256 usdValueFromRedemption = dsce.getUSDValue(weth, collateralToRedeem); //returns in USD
 
         vm.startPrank(USER); // USER burns DSC and redeems collater
         dsc.approve(address(dsce), dscToBurn);
@@ -332,21 +261,14 @@ contract DSCEngineTest is Test {
         vm.stopPrank();
 
         // Check final state
-        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce
-            .getAccountInformation(USER);
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getAccountInformation(USER);
 
         //asserts
         assertEq(totalDscMinted, totalDscMintedBefore - dscToBurn); // 20k - 5k = 15k DSC left
         assertEq(dsc.balanceOf(USER), MINTED_DSC_AMOUNT - dscToBurn); // 15k DSC left in wallet
 
-        assertEq(
-            collateralValueInUsd,
-            collateralValueInUsdBefore - usdValueFromRedemption
-        ); // all in USD
-        assertEq(
-            dsce.getCollateralDeposited(USER, weth),
-            AMOUNT_COLLATERAL_DEPOSITED - collateralToRedeem
-        ); //all in token units (WETH): 10ETH, 10ETH - redeemed WETH amount = WETH left
+        assertEq(collateralValueInUsd, collateralValueInUsdBefore - usdValueFromRedemption); // all in USD
+        assertEq(dsce.getCollateralDeposited(USER, weth), AMOUNT_COLLATERAL_DEPOSITED - collateralToRedeem); //all in token units (WETH): 10ETH, 10ETH - redeemed WETH amount = WETH left
     }
 
     ////////////////////////////////////////////////
@@ -354,16 +276,11 @@ contract DSCEngineTest is Test {
     ////////////////////////////////////////////////
 
     function test_burnDsc_revertsOnZero() public {
-        vm.expectRevert(
-            DSCEngine.DSCEngine__AmountShouldBeMoreThanZero.selector
-        );
+        vm.expectRevert(DSCEngine.DSCEngine__AmountShouldBeMoreThanZero.selector);
         dsce.burnDsc(0);
     }
 
-    function test_burnDsc_reducesDebtSupplyAndEmitsEvent()
-        public
-        depositedCollateral
-    {
+    function test_burnDsc_reducesDebtSupplyAndEmitsEvent() public depositedCollateral {
         uint256 burnDscAmount = 5000e18;
 
         vm.startPrank(USER);
@@ -378,7 +295,7 @@ contract DSCEngineTest is Test {
         dsce.burnDsc(burnDscAmount); //burns 5k, should be 15k left
         vm.stopPrank();
 
-        (uint256 minted, ) = dsce.getAccountInformation(USER);
+        (uint256 minted,) = dsce.getAccountInformation(USER);
 
         assertEq(minted, 15000e18);
         assertEq(dsc.totalSupply(), 15000e18); // since only USER minted
@@ -387,55 +304,32 @@ contract DSCEngineTest is Test {
     ////////////////////////////////////////////////
     /////////----REDEEM COLLATERAL TEST------///////
     ////////////////////////////////////////////////
-    function test_redeemCollateral_revertsWhenExceedsBalance()
-        public
-        depositedCollateral
-    {
+    function test_redeemCollateral_revertsWhenExceedsBalance() public depositedCollateral {
         vm.startPrank(USER);
         vm.expectRevert(DSCEngine.DSCEngine__RedeemExceedsBalance.selector);
         dsce.redeemCollateral(weth, AMOUNT_COLLATERAL_DEPOSITED + 1);
         vm.stopPrank();
     }
 
-    function test_redeemCollateral_updatesStateAndBalances()
-        public
-        depositedCollateral
-    {
+    function test_redeemCollateral_updatesStateAndBalances() public depositedCollateral {
         uint256 collateralRedeemed = 1 ether;
         vm.startPrank(USER);
         dsce.redeemCollateral(weth, collateralRedeemed);
         vm.stopPrank();
 
-        assertEq(
-            dsce.getCollateralDeposited(USER, weth),
-            AMOUNT_COLLATERAL_DEPOSITED - collateralRedeemed
-        );
-        assertEq(
-            ERC20Mock(weth).balanceOf(address(dsce)),
-            AMOUNT_COLLATERAL_DEPOSITED - collateralRedeemed
-        );
-        assertEq(
-            ERC20Mock(weth).balanceOf(USER),
-            (INITIAL_BALANCE - AMOUNT_COLLATERAL_DEPOSITED) + collateralRedeemed
-        );
+        assertEq(dsce.getCollateralDeposited(USER, weth), AMOUNT_COLLATERAL_DEPOSITED - collateralRedeemed);
+        assertEq(ERC20Mock(weth).balanceOf(address(dsce)), AMOUNT_COLLATERAL_DEPOSITED - collateralRedeemed);
+        assertEq(ERC20Mock(weth).balanceOf(USER), (INITIAL_BALANCE - AMOUNT_COLLATERAL_DEPOSITED) + collateralRedeemed);
     }
 
-    function test_redeemCollateral_revertsIfHFWouldBreak()
-        public
-        depositedCollateral
-    {
+    function test_redeemCollateral_revertsIfHFWouldBreak() public depositedCollateral {
         // Collateral deposited $30.000 (adjusted $24,000). Mint $20.000 -> HF = 1.2
 
         // Try to redeem 2 WETH ($6k raw -> $4.8k adjusted lost)
         vm.startPrank(USER);
         dsce.mintDsc(MINTED_DSC_AMOUNT); //20k
         // uint256 hf = dsce.getHealthFactor(USER);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DSCEngine.DSCEngine__BreaksHealthFactor.selector,
-                9.6e17
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(DSCEngine.DSCEngine__BreaksHealthFactor.selector, 9.6e17));
         dsce.redeemCollateral(weth, 2 ether); //breaks HF
         vm.stopPrank();
     }
@@ -460,20 +354,12 @@ contract DSCEngineTest is Test {
         vm.startPrank(USER);
         dsce.mintDsc(MINTED_DSC_AMOUNT); //20k
         uint256 hf = dsce.getHealthFactor(USER);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                DSCEngine.DSCEngine__HealthFactorIsGood.selector,
-                hf
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(DSCEngine.DSCEngine__HealthFactorIsGood.selector, hf));
         dsce.liquidate(weth, USER, 100e18);
         vm.stopPrank();
     }
 
-    function test_liquidate_reverts_whenLiquidatorDoesntHaveEnoughDSC()
-        public
-        depositedCollateral
-    {
+    function test_liquidate_reverts_whenLiquidatorDoesntHaveEnoughDSC() public depositedCollateral {
         vm.startPrank(USER);
         dsce.mintDsc(MINTED_DSC_AMOUNT);
         vm.stopPrank();
@@ -488,10 +374,7 @@ contract DSCEngineTest is Test {
         vm.stopPrank();
     }
 
-    function test_liquidate_reverts_ifLiquidationDoesntImproveHealthFactor()
-        public
-        depositedCollateral
-    {
+    function test_liquidate_reverts_ifLiquidationDoesntImproveHealthFactor() public depositedCollateral {
         vm.startPrank(USER);
         dsce.mintDsc(MINTED_DSC_AMOUNT); //20k debt of collateral
         vm.stopPrank();
@@ -528,13 +411,9 @@ contract DSCEngineTest is Test {
 
         uint256 userDebt = dsce.getDSCMinted(USER);
         uint256 newHF = dsce.getHealthFactor(USER);
-        uint256 tokenAmountFromDebtCovered = dsce.getTokenAmountFromDSC(
-            weth,
-            10000e18
-        );
+        uint256 tokenAmountFromDebtCovered = dsce.getTokenAmountFromDSC(weth, 10000e18);
         uint256 bonusCollateral = (tokenAmountFromDebtCovered * 10) / 100; // 10%
-        uint256 expectedCollateralReceived = tokenAmountFromDebtCovered +
-            bonusCollateral;
+        uint256 expectedCollateralReceived = tokenAmountFromDebtCovered + bonusCollateral;
         uint256 liquidatorWethBalance = ERC20Mock(weth).balanceOf(LIQUIDATOR);
         uint256 liquidatorHF = dsce.getHealthFactor(LIQUIDATOR);
 
@@ -573,29 +452,21 @@ contract DSCEngineTest is Test {
 
     function test_mint_revertsIfZeroAddress() public {
         vm.startPrank(address(dsce)); // engine is owner
-        vm.expectRevert(
-            DecentralizedStableCoin
-                .DecentralizedStableCoin__NotZeroAddress
-                .selector
-        );
+        vm.expectRevert(DecentralizedStableCoin.DecentralizedStableCoin__NotZeroAddress.selector);
         dsc.mint(address(0), 100e18);
         vm.stopPrank();
     }
 
     function test_mint_revertsIfZeroAmount() public {
         vm.startPrank(address(dsce));
-        vm.expectRevert(
-            DecentralizedStableCoin.DecentralizedStableCoin__ZeroAmount.selector
-        );
+        vm.expectRevert(DecentralizedStableCoin.DecentralizedStableCoin__ZeroAmount.selector);
         dsc.mint(USER, 0);
         vm.stopPrank();
     }
 
     function test_burn_revertsIfZeroAmount() public {
         vm.startPrank(address(dsce));
-        vm.expectRevert(
-            DecentralizedStableCoin.DecentralizedStableCoin__ZeroAmount.selector
-        );
+        vm.expectRevert(DecentralizedStableCoin.DecentralizedStableCoin__ZeroAmount.selector);
         dsc.burn(0);
         vm.stopPrank();
     }
@@ -603,11 +474,7 @@ contract DSCEngineTest is Test {
     function test_burn_revertsIfExceedsBalance() public {
         vm.startPrank(address(dsce));
         // USER has 0 tokens, so trying to burn should revert
-        vm.expectRevert(
-            DecentralizedStableCoin
-                .DecentralizedStableCoin__BurnAmountExceedsBalance
-                .selector
-        );
+        vm.expectRevert(DecentralizedStableCoin.DecentralizedStableCoin__BurnAmountExceedsBalance.selector);
         dsc.burn(100e18);
         vm.stopPrank();
     }
@@ -624,8 +491,6 @@ contract DSCEngineTest is Test {
 
         // act/assert
         vm.expectRevert(OracleLib.OracleLib__StalePrice.selector);
-        OracleLib.staleCheckLatestRoundData(
-            AggregatorV3Interface(address(mock))
-        ); // library expects an interface type (AggregatorV3Interface)
+        OracleLib.staleCheckLatestRoundData(AggregatorV3Interface(address(mock))); // library expects an interface type (AggregatorV3Interface)
     }
 }
