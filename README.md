@@ -1,4 +1,8 @@
-# ![Logo](frontend-integration/public/logo.png) AZD — Azevedo Dollar Stablecoin
+<!-- # ![Logo](frontend-integration/public/logo.png) AZD — Azevedo Dollar Stablecoin -->
+<h1>
+<img src="frontend-integration/public/logo.png" alt="Logo" width="60" style="vertical-align:middle;"/>
+  AZD — Azevedo Dollar Stablecoin
+</h1>
 
 A fully on-chain **overcollateralized stablecoin protocol** built with Solidity and Foundry, featuring React + Tailwind front-end for minting, burning, redeeming, and liquidating positions.
 
@@ -8,7 +12,7 @@ A fully on-chain **overcollateralized stablecoin protocol** built with Solidity 
 
 
 > **Live Demo (Frontend)**  
-> 🔗 [dApp website](https://defi-stablecoin-three.vercel.app/)  
+> 🔗 [dApp website](https://azd-delta.vercel.app/)  
 ![UI](frontend-integration/public/ui.png)
 
 ---
