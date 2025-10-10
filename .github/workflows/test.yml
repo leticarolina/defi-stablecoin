@@ -34,7 +34,13 @@ jobs:
           forge build --sizes
         id: build
 
+      - name: Install dependencies
+        run: |
+          cd smart-contracts
+          forge install
+
       - name: Run Forge tests
         run: |
-          forge test -vvv --root smart-contracts
+          cd smart-contracts
+          forge test -vvv
         id: test
