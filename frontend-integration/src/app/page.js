@@ -169,12 +169,6 @@ export default function Home() {
       // Step 2: Approve WETH for AZDEngine
       const tx2 = await weth.approve(ENGINE_CONTRACT_ADDRESS, collateral);
       await tx2.wait();
-      // Check existing allowance before approving - dropped for now
-      // const currentAllowance = await weth.allowance(userAddress, ENGINE_CONTRACT_ADDRESS);
-      // if (currentAllowance < collateral) {
-      //   const tx2 = await weth.approve(ENGINE_CONTRACT_ADDRESS, ethers.MaxUint256);
-      //   await tx2.wait();
-      // }
 
 
       // Step 3: Deposit & Mint in AZDEngine
@@ -573,7 +567,15 @@ export default function Home() {
                 Redeem Collateral
               </button>
               <div className="text-sm text-gray-700 space-y-1">
-                <p>Projected Health Status: {projectedHF || (userStats ? Number(userStats.healthFactor).toFixed(2) : "")}</p>
+                {/* <p>Projected Health Status: {projectedHF || (userStats ? Number(userStats.healthFactor).toFixed(2) : "")}</p> */}
+                <p>
+                  Projected Health Status:{" "}
+                  {(() => {
+                    const hf = Number(projectedHF || (userStats ? userStats.healthFactor : 0));
+                    if (!isFinite(hf) || hf > 1000) return "Safe";
+                    return hf.toFixed(2);
+                  })()}
+                </p>
                 <p>Max redeemable: {userStats ? `${userStats.collateralDeposited} WETH` : "..."}</p>
               </div>
             </div>
