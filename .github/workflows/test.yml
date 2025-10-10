@@ -29,15 +29,20 @@ jobs:
           forge fmt --check
         id: fmt
 
-      - name: Run Forge build
-        run: |
-          forge build --sizes
-        id: build
-
       - name: Install dependencies
         run: |
+         cd smart-contracts
+         forge install foundry-rs/forge-std \
+         OpenZeppelin/openzeppelin-contracts \
+         smartcontractkit/chainlink-evm \
+    
+
+
+      - name: Run Forge build
+        run: |
           cd smart-contracts
-          forge install
+          forge build --sizes
+        id: build
 
       - name: Run Forge tests
         run: |

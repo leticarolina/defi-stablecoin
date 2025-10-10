@@ -138,10 +138,11 @@ export default function Home() {
     try {
       // call contract for USD value
       const usdValue = await AZDeContract.getUSDValue(WETH_ADDRESS, ethers.parseUnits(value, 18)); //smart contract expect the value in wei 1234567890000000000
-      setEthUsdPrice(ethers.formatUnits(usdValue, 18)); //convert back from raw integer get a string like "1.234567890123456789"
+      setEthUsdPrice(Number(ethers.formatUnits(usdValue, 18)).toFixed(2)); //convert back from raw integer get a string like "1.234567890123456789"
 
       const max = (usdValue * 80n) / 100n; // apply protocol rule to 80% liquidation threshold
-      setMaxMintable(ethers.formatUnits(max, 18));
+      setMaxMintable(Number(ethers.formatUnits(max, 18)).toFixed(2));
+
 
     } catch (err) {
       console.error("Failed to calculate mintable:", err);
@@ -449,25 +450,39 @@ export default function Home() {
 
               <span className="text-gray-700 font-semibold">Health Status:</span>
               {userStats ? (
-                <span
-                  className={`font-bold ${Number(userStats.healthFactor) < 1
-                    ? "text-red-600"
-                    : Number(userStats.healthFactor) < 1.2
-                      ? "text-yellow-600"
-                      : Number(userStats.healthFactor) < 1.5
-                        ? "text-orange-500"
-                        : "text-green-600"
-                    }`}
-                >
-                  {Number(userStats.healthFactor).toFixed(2)}{" "}
-                  {Number(userStats.healthFactor) < 1
-                    ? "(Liquidatable)"
-                    : Number(userStats.healthFactor) < 1.2
-                      ? "(Danger Zone)"
-                      : Number(userStats.healthFactor) < 1.5
-                        ? "(At Risk)"
-                        : "(Safe)"}
-                </span>
+                (() => {
+                  const hf = Number(userStats.healthFactor);
+                  const displayHF =
+                    !isFinite(hf) || hf > 1000 ? "Safe" : hf.toFixed(2);
+
+                  const color =
+                    !isFinite(hf) || hf > 1000
+                      ? "text-green-600"
+                      : hf < 1
+                        ? "text-red-600"
+                        : hf < 1.2
+                          ? "text-yellow-600"
+                          : hf < 1.5
+                            ? "text-orange-500"
+                            : "text-green-600";
+
+                  const label =
+                    !isFinite(hf) || hf > 1000
+                      ? "(Safe)"
+                      : hf < 1
+                        ? "(Liquidatable)"
+                        : hf < 1.2
+                          ? "(Danger Zone)"
+                          : hf < 1.5
+                            ? "(At Risk)"
+                            : "(Safe)";
+
+                  return (
+                    <span className={`font-bold ${color}`}>
+                      {displayHF} {label}
+                    </span>
+                  );
+                })()
               ) : (
                 <span className="text-gray-400">...</span>
               )}
