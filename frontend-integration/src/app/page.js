@@ -415,8 +415,8 @@ export default function Home() {
         <Navbar userAddress={userAddress} connectWallet={connectWallet}></Navbar>
 
         {/* Title Section */}
-        <TitleAndSubTitle title={"Stablecoin Unlock Liquidity with ETH"}
-          subtitle={"Deposit Ethereum to mint AZD or burn your AZD to redeem Wrapped Ethereum."} />
+        <TitleAndSubTitle title={"Unlock Liquidity with Your ETH"}
+          subtitle={"Deposit Ethereum to mint AZD ($1 stablecoin), or burn AZD to redeem WETH."} />
 
       </header >
 

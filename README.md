@@ -1,6 +1,6 @@
 <!-- # ![Logo](frontend-integration/public/logo.png) AZD — Azevedo Dollar Stablecoin -->
 <h1>
-<img src="frontend-integration/public/logo.png" alt="Logo" width="60" style="vertical-align:middle;"/>
+<img src="frontend-integration/public/logo.png" alt="Logo" width="48" style="vertical-align:bottom;"/>
   AZD — Azevedo Dollar Stablecoin
 </h1>
 
