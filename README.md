@@ -9,9 +9,9 @@ A fully on-chain **overcollateralized stablecoin protocol** built with Solidity 
 
 
 > **Live Demo *Building the Azevedo Dollar***  
-> 🔗 [Open dApp website](https://azd-delta.vercel.app/)  
-[![Watch the demo](frontend-integration/public/desktop.png)](https://www.loom.com/share/2c9acdae45d6435baffbe3160cfb255c)
-<!-- ![UI](frontend-integration/public/ui.png) -->
+> 🔗 [Open dApp website](https://azd-delta.vercel.app/)
+> 🎥 [Watch Demo on Loom](https://www.loom.com/share/2c9acdae45d6435baffbe3160cfb255c)
+[![UI](frontend-integration/public/desktop.png)]
 
 ---
 
