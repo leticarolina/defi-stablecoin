@@ -66,6 +66,17 @@ export default function Home() {
   const [liquidateAmount, setLiquidateAmount] = useState("");
   const [liquidationPreview, setLiquidationPreview] = useState(null);
 
+  const SEPOLIA_PARAMS = {
+    chainId: "0xaa36a7", // Hex for 11155111
+    chainName: "Sepolia",
+    nativeCurrency: {
+      name: "Sepolia ETH",
+      symbol: "ETH",
+      decimals: 18,
+    },
+    rpcUrls: ["https://rpc.sepolia.org"],
+    blockExplorerUrls: ["https://sepolia.etherscan.io"],
+  };
 
   /*//////////////////////////////////////////////////////////////
                          CONNECT WALLET
@@ -79,6 +90,9 @@ export default function Home() {
     try {
       const provider = new ethers.BrowserProvider(window.ethereum); //so can talk to the blockchain
       await provider.send("eth_requestAccounts", []); // popup ask user to connect
+
+
+      await switchToSepolia(provider); // Force to switch to Sepolia
 
       const signer = await provider.getSigner(); //Represents the connected wallet, used to sign transactions.
       const address = await signer.getAddress(); //get user wallet address
@@ -96,6 +110,20 @@ export default function Home() {
 
     } catch (err) {
       console.error("Wallet connection failed:", err);
+    }
+  }
+
+
+  async function switchToSepolia(provider) {
+    try {
+      await provider.send("wallet_switchEthereumChain", [{ chainId: SEPOLIA_PARAMS.chainId }]);
+    } catch (err) {
+      // If the network isn’t added yet
+      if (err.code === 4902) {
+        await provider.send("wallet_addEthereumChain", [SEPOLIA_PARAMS]);
+      } else {
+        throw err;
+      }
     }
   }
 
@@ -498,44 +526,61 @@ export default function Home() {
           {/* Deposit & Mint */}
           <Card title="💵 Deposit & Mint" color="blue">
             {/* Specific inputs + button + logic */}
-            <div className="flex flex-col gap-3">
-              <input
-                type="number"
-                placeholder="ETH Amount"
-                className="border border-blue-200 p-2 rounded-md focus:ring-2 focus:ring-blue-400 outline-none"
-                value={collateralAmount}
-                onChange={handleInputCollateralChange}
-              />
-              <input
-                type="number"
-                placeholder="AZD to Mint"
-                className="border border-blue-200 p-2 rounded-md focus:ring-2 focus:ring-blue-400 outline-none"
-                value={mintAmount}
-                onChange={(e) => setMintAmount(e.target.value)}
-              />
+            <div className="flex flex-col justify-between flex-1">
+              <div className="flex flex-col gap-3">
+                <input
+                  type="number"
+                  placeholder="ETH Amount"
+                  className="border border-blue-200 p-2 rounded-md focus:ring-2 focus:ring-blue-400 outline-none"
+                  value={collateralAmount}
+                  onChange={handleInputCollateralChange}
+                />
+                <input
+                  type="number"
+                  placeholder="AZD to Mint"
+                  className="border border-blue-200 p-2 rounded-md focus:ring-2 focus:ring-blue-400 outline-none"
+                  value={mintAmount}
+                  onChange={(e) => setMintAmount(e.target.value)}
+                />
+                <div className=" text-sm text-gray-700 space-y-1 pb-3">
+                  <p>ETH/USD Price: {ethUsdPrice ? `$${ethUsdPrice}` : "..."}</p>
+                  <p>Max to Mint: {maxMintable ? `${maxMintable} AZD` : "..."}</p>
+                </div>
+
+              </div>
+
               <button
                 onClick={handleDepositAndMint}
-                className="bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition-all"
+                className="bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-medium transition-all w-full align-self-end"
               >
                 {"Wrap > Deposit > Mint"}
               </button>
-            </div>
-            <div className="mt-4 text-sm text-gray-700 space-y-1">
-              <p>ETH/USD Price: {ethUsdPrice ? `$${ethUsdPrice}` : "..."}</p>
-              <p>Max to Mint: {maxMintable ? `${maxMintable} AZD` : "..."}</p>
+
             </div>
           </Card>
 
           {/* Burn AZD */}
           <Card title="🔥 Burn AZD" color="red">
-            <div className="flex flex-col gap-3">
-              <input
-                type="number"
-                placeholder="Amount to Burn"
-                className="border border-rose-200 p-2 rounded-md focus:ring-2 focus:ring-red-400 outline-none"
-                value={burnAmount}
-                onChange={(e) => setBurnAmount(e.target.value)}
-              />
+            <div className="flex flex-col justify-between flex-1">
+              <div className="flex flex-col gap-3">
+                <input
+                  type="number"
+                  placeholder="Amount to Burn"
+                  className="border border-rose-200 p-2 rounded-md focus:ring-2 focus:ring-red-400 outline-none mt-1"
+                  value={burnAmount}
+                  onChange={(e) => setBurnAmount(e.target.value)}
+                />
+                {/* <button
+                onClick={handleBurnAZD}
+                className="bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg font-medium transition-all"
+                disabled={!burnAmount || (userStats && Number(burnAmount) > Number(userStats.AZDMinted))}
+              >
+                Burn AZD
+              </button> */}
+                <p className="text-sm text-gray-700">
+                  Max burnable: {userStats ? `${userStats.AZDMinted} AZD` : "..."}
+                </p>
+              </div>
               <button
                 onClick={handleBurnAZD}
                 className="bg-red-500 hover:bg-red-600 text-white py-2 rounded-lg font-medium transition-all"
@@ -543,22 +588,40 @@ export default function Home() {
               >
                 Burn AZD
               </button>
-              <p className="text-sm text-gray-700">
-                Max burnable: {userStats ? `${userStats.AZDMinted} AZD` : "..."}
-              </p>
             </div>
           </Card>
 
           {/* Redeem Collateral */}
           <Card title="Redeem WETH" color="green">
-            <div className="flex flex-col gap-3">
-              <input
-                type="number"
-                placeholder="Collateral to Redeem"
-                className="border border-green-200 p-2 rounded-md focus:ring-2 focus:ring-green-400 outline-none"
-                value={redeemAmount}
-                onChange={handleRedeemInputChange}
-              />
+            <div className="flex flex-col justify-between flex-1">
+              <div className="flex flex-col gap-3">
+                <input
+                  type="number"
+                  placeholder="Collateral to Redeem"
+                  className="border border-green-200 p-2 rounded-md focus:ring-2 focus:ring-green-400 outline-none mt-1"
+                  value={redeemAmount}
+                  onChange={handleRedeemInputChange}
+                />
+                {/* <button
+                onClick={handleRedeemCollateral}
+                className="bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium transition-all"
+                disabled={!redeemAmount || (userStats && Number(redeemAmount) > Number(userStats.collateralDeposited))}
+              >
+                Redeem Collateral
+              </button> */}
+                <div className="text-sm text-gray-700 space-y-1">
+                  {/* <p>Projected Health Status: {projectedHF || (userStats ? Number(userStats.healthFactor).toFixed(2) : "")}</p> */}
+                  <p>
+                    Projected Health Status:{" "}
+                    {(() => {
+                      const hf = Number(projectedHF || (userStats ? userStats.healthFactor : 0));
+                      if (!isFinite(hf) || hf > 1000) return "Safe";
+                      return hf.toFixed(2);
+                    })()}
+                  </p>
+                  <p>Max redeemable: {userStats ? `${userStats.collateralDeposited} WETH` : "..."}</p>
+                </div>
+              </div>
               <button
                 onClick={handleRedeemCollateral}
                 className="bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-medium transition-all"
@@ -566,18 +629,6 @@ export default function Home() {
               >
                 Redeem Collateral
               </button>
-              <div className="text-sm text-gray-700 space-y-1">
-                {/* <p>Projected Health Status: {projectedHF || (userStats ? Number(userStats.healthFactor).toFixed(2) : "")}</p> */}
-                <p>
-                  Projected Health Status:{" "}
-                  {(() => {
-                    const hf = Number(projectedHF || (userStats ? userStats.healthFactor : 0));
-                    if (!isFinite(hf) || hf > 1000) return "Safe";
-                    return hf.toFixed(2);
-                  })()}
-                </p>
-                <p>Max redeemable: {userStats ? `${userStats.collateralDeposited} WETH` : "..."}</p>
-              </div>
             </div>
           </Card>
 

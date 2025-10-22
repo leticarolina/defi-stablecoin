@@ -6,7 +6,8 @@ export function Navbar({ userAddress, connectWallet }) {
       <a href="https://letiazevedo.com" target="_blank" rel="noopener noreferrer"
         className="flex items-center gap-2 group cursor-pointer">
         <Image src="/logo.png" alt="AZD Logo" width={40} height={40}
-          className="rounded-full object-contain hover:scale-105 transition-transform duration-200" />
+          className="rounded-full object-contain hover:scale-105 transition-transform duration-200"
+        />
         <h1 className="text-xl font-semibold text-purple-900 hover:text-purple-400">AZD</h1>
       </a>
 
